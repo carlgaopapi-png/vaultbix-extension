@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VaultBix Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+    /* ======================================================================
+       VaultBix Dashboard — Premium Redesign
+       ====================================================================== */
+
+    /* ---------- LAYOUT ---------- */
+    .dashboard-container {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 0 32px 48px;
+        min-height: 100vh;
+        background: var(--bg-color);
+    }
+
+    /* ---------- ANIMATED HEADER ---------- */
+    .dash-header {
+        position: relative;
+        padding: 28px 0 24px;
+        margin-bottom: 28px;
+        border-bottom: 1px solid var(--border-color);
+        overflow: hidden;
+    }
+    .dash-header::before {
+        content: '';
+        position: absolute;
+        top: -80%;
+        left: -30%;
+        width: 160%;
+        height: 260%;
+        background: radial-gradient(circle at 25% 40%, rgba(0,229,191,0.05) 0%, transparent 50%),
+                    radial-gradient(circle at 75% 60%, rgba(14,165,233,0.03) 0%, transparent 50%);
+        animation: dashHeaderOrb 25s ease-in-out infinite;
+        pointer-events: none;
+    }
+    @keyframes dashHeaderOrb {
+        0%,100% { transform: translate(0,0) rotate(0deg) }
+        33% { transform: translate(15px,-10px) rotate(2deg) }
+        66% { transform: translate(-10px,8px) rotate(-1deg) }
+    }
+    .dash-header-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        position: relative;
+        z-index: 1;
+    }
+    .dash-header-left {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+    }
+    .dash-logo-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, rgba(0,229,191,0.1), rgba(14,165,233,0.06));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--primary-color);
+        border: 1px solid rgba(0,229,191,0.12);
+    }
+    .dash-header-title {
+        font-size: 22px;
+        font-weight: 800;
+        letter-spacing: -0.5px;
+        background: linear-gradient(135deg, var(--text-color) 0%, var(--text-secondary) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    .dash-header-sub {
+        font-size: 13px;
+        color: var(--text-tertiary);
+        margin-top: 2px;
+    }
+    .dash-header-right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .dash-tier-badge {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        border-radius: 100px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.3px;
+        background: var(--primary-light);
+        color: var(--primary-color);
+        border: 1px solid rgba(0,229,191,0.12);
+    }
+    .dash-tier-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--primary-color);
+        box-shadow: 0 0 8px var(--primary-color);
+        animation: dotPulse 2s ease-in-out infinite;
+    }
+    @keyframes dotPulse {
+        0%,100% { opacity: 1; transform: scale(1) }
+        50% { opacity: 0.5; transform: scale(1.3) }
+    }
+
+    /* ---------- PRIVACY BANNER ---------- */
+    .dash-privacy-banner {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 20px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, rgba(0,229,191,0.04), rgba(14,165,233,0.02));
+        border: 1px solid rgba(0,229,191,0.08);
+        margin-bottom: 24px;
+        font-size: 13px;
+        color: var(--text-secondary);
+        position: relative;
+        overflow: hidden;
+    }
+    .dash-privacy-banner::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 14px;
+        padding: 1px;
+        background: linear-gradient(135deg, rgba(0,229,191,0.15), transparent 60%);
+        -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+        pointer-events: none;
+    }
+    .dash-privacy-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        background: rgba(0,229,191,0.08);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        color: var(--primary-color);
+    }
+    .dash-privacy-title { font-weight: 700; color: var(--text-color); }
+
+    /* ---------- STAT CARDS ---------- */
+    .dash-stats-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 16px;
+        margin-bottom: 28px;
+    }
+    .dash-stat-card {
+        padding: 24px;
+        border-radius: 16px;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        position: relative;
+        overflow: hidden;
+        transition: all 0.3s cubic-bezier(0.16,1,0.3,1);
+    }
+    .dash-stat-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, var(--primary-color), #0ea5e9);
+        opacity: 0;
+        transition: opacity 0.3s;
+    }
+    .dash-stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+        border-color: rgba(0,229,191,0.12);
+    }
+    .dash-stat-card:hover::before { opacity: 1; }
+    .dash-stat-card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+    }
+    .dash-stat-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, rgba(0,229,191,0.08), rgba(14,165,233,0.04));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--primary-color);
+    }
+    .dash-stat-card:nth-child(2) .dash-stat-icon {
+        background: linear-gradient(135deg, rgba(14,165,233,0.08), rgba(99,102,241,0.04));
+        color: var(--info);
+    }
+    .dash-stat-value {
+        font-size: 36px;
+        font-weight: 900;
+        letter-spacing: -2px;
+        line-height: 1;
+        margin-bottom: 4px;
+        background: linear-gradient(135deg, var(--text-color), var(--text-secondary));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    .dash-stat-card:nth-child(2) .dash-stat-value {
+        background: linear-gradient(135deg, var(--primary-color), #0ea5e9);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    .dash-stat-label {
+        font-size: 12px;
+        color: var(--text-tertiary);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    /* Quick Actions */
+    .dash-stat-card-actions {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+    .dash-stat-card-actions .dash-stat-card-header { margin-bottom: 0; }
+    .dash-actions-group {
+        display: flex;
+        gap: 10px;
+        margin-top: 16px;
+    }
+    .dash-action-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 18px;
+        border-radius: 10px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: 1px solid var(--border-color);
+        background: var(--bg-tertiary);
+        color: var(--text-secondary);
+    }
+    .dash-action-btn:hover {
+        background: var(--bg-hover);
+        border-color: var(--border-hover);
+        color: var(--text-color);
+        transform: translateY(-1px);
+    }
+    .dash-action-btn--danger {
+        border-color: rgba(240,68,56,0.15);
+        color: var(--danger);
+    }
+    .dash-action-btn--danger:hover {
+        background: rgba(240,68,56,0.06);
+        border-color: rgba(240,68,56,0.25);
+    }
+
+    /* ---------- MAIN CONTENT GRID ---------- */
+    .dash-content {
+        display: grid;
+        grid-template-columns: 1fr 360px;
+        gap: 24px;
+    }
+    @media (max-width: 960px) {
+        .dash-content { grid-template-columns: 1fr; }
+        .dash-stats-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    /* ---------- CARDS ---------- */
+    .dash-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        overflow: hidden;
+        margin-bottom: 20px;
+        transition: all 0.3s;
+    }
+    .dash-card:hover {
+        border-color: var(--border-hover);
+    }
+    .dash-card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 18px 22px;
+        border-bottom: 1px solid var(--border-light);
+    }
+    .dash-card-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--text-color);
+    }
+    .dash-card-title svg { color: var(--text-tertiary); }
+    .dash-card-badge {
+        padding: 4px 12px;
+        border-radius: 100px;
+        font-size: 11px;
+        font-weight: 700;
+        background: var(--bg-tertiary);
+        color: var(--text-tertiary);
+    }
+    .dash-card-subtitle {
+        font-size: 12px;
+        color: var(--text-tertiary);
+    }
+
+    /* ---------- ACTIVITY LOG TABLE ---------- */
+    .activity-log-wrapper {
+        overflow-x: auto;
+    }
+    .log-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .log-table thead th {
+        padding: 12px 18px;
+        text-align: left;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text-tertiary);
+        background: var(--bg-tertiary);
+        border-bottom: 1px solid var(--border-light);
+    }
+    .log-table tbody tr {
+        transition: background 0.15s;
+    }
+    .log-table tbody tr:hover {
+        background: var(--bg-hover);
+    }
+    .log-table tbody td {
+        padding: 14px 18px;
+        font-size: 13px;
+        color: var(--text-secondary);
+        border-bottom: 1px solid var(--border-light);
+    }
+    .log-table tbody tr:last-child td {
+        border-bottom: none;
+    }
+    .type-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 3px 10px;
+        border-radius: 100px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+    }
+    .type-high {
+        background: rgba(240,68,56,0.1);
+        color: var(--danger);
+    }
+    .type-medium {
+        background: rgba(247,144,9,0.1);
+        color: var(--warning);
+    }
+    .type-low {
+        background: rgba(18,183,106,0.1);
+        color: var(--success);
+    }
+    .loading-row, .empty-row, .error-row {
+        text-align: center;
+        padding: 48px 24px !important;
+        color: var(--text-tertiary);
+    }
+    .empty-state, .error-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+    }
+    .empty-state svg, .error-state svg {
+        color: var(--text-tertiary);
+        opacity: 0.5;
+    }
+    .empty-state p, .error-state p {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-secondary);
+    }
+    .empty-state span {
+        font-size: 13px;
+        color: var(--text-tertiary);
+    }
+
+    /* ---------- TYPE BREAKDOWN ---------- */
+    .breakdown-list-interactive {
+        padding: 8px;
+    }
+    .breakdown-item-interactive {
+        padding: 14px 16px;
+        border-radius: 12px;
+        margin-bottom: 6px;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: 1px solid transparent;
+    }
+    .breakdown-item-interactive:hover {
+        background: var(--bg-hover);
+    }
+    .breakdown-item-interactive.expanded {
+        background: var(--bg-hover);
+        border-color: var(--border-color);
+    }
+    .breakdown-item-header-interactive {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .breakdown-item-left { display: flex; align-items: center; gap: 8px; }
+    .breakdown-item-right { display: flex; align-items: center; gap: 10px; }
+    .breakdown-type { font-size: 14px; font-weight: 600; color: var(--text-color); }
+    .breakdown-count { font-size: 14px; font-weight: 800; color: var(--text-color); }
+    .breakdown-percentage { font-size: 12px; color: var(--text-tertiary); }
+    .breakdown-chevron {
+        color: var(--text-tertiary);
+        transition: transform 0.3s;
+    }
+    .breakdown-bar-container {
+        height: 4px;
+        background: var(--bg-tertiary);
+        border-radius: 4px;
+        margin-top: 10px;
+        overflow: hidden;
+    }
+    .breakdown-bar {
+        height: 100%;
+        border-radius: 4px;
+        transition: width 0.6s cubic-bezier(0.16,1,0.3,1);
+    }
+    .breakdown-bar.type-high { background: linear-gradient(90deg, var(--danger), #f97066); }
+    .breakdown-bar.type-medium { background: linear-gradient(90deg, var(--warning), #fdb022); }
+    .breakdown-bar.type-low { background: linear-gradient(90deg, var(--success), #32d583); }
+    .breakdown-details {
+        margin-top: 14px;
+        animation: slideDown 0.25s ease;
+    }
+    @keyframes slideDown {
+        from { opacity: 0; transform: translateY(-6px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .breakdown-details-inner {
+        padding: 14px;
+        border-radius: 10px;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-light);
+    }
+    .breakdown-risk-badge {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 100px;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 10px;
+    }
+    .breakdown-description { font-size: 13px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 10px; }
+    .breakdown-section h4 { font-size: 12px; font-weight: 700; color: var(--text-color); margin-bottom: 4px; }
+    .breakdown-section p { font-size: 12px; color: var(--text-tertiary); line-height: 1.5; margin-bottom: 8px; }
+    .breakdown-hint {
+        text-align: center;
+        font-size: 12px;
+        color: var(--text-tertiary);
+        padding: 8px;
+        opacity: 0.7;
+    }
+
+    /* ---------- SIDEBAR CARDS ---------- */
+    .dash-sidebar { display: flex; flex-direction: column; gap: 0; }
+
+    /* Risky Domains */
+    .risky-domains-grid { padding: 8px 16px; }
+    .risky-domain-card {
+        padding: 14px 0;
+        border-bottom: 1px solid var(--border-light);
+    }
+    .risky-domain-card:last-child { border-bottom: none; }
+    .risky-domain-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .risky-domain-rank {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        background: var(--bg-tertiary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        font-weight: 800;
+        color: var(--text-tertiary);
+        flex-shrink: 0;
+    }
+    .risky-domain-info { flex: 1; min-width: 0; }
+    .risky-domain-name {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-color);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .risky-domain-meta { font-size: 11px; color: var(--text-tertiary); }
+    .risky-domain-score {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .risk-badge {
+        padding: 3px 10px;
+        border-radius: 100px;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+    }
+    .risk-critical, .risk-high { background: rgba(240,68,56,0.1); color: var(--danger); }
+    .risk-medium { background: rgba(247,144,9,0.1); color: var(--warning); }
+    .risk-low { background: rgba(18,183,106,0.1); color: var(--success); }
+    .risk-score-value { font-size: 13px; font-weight: 800; color: var(--text-color); }
+    .risk-score-bar {
+        height: 3px;
+        background: var(--bg-tertiary);
+        border-radius: 3px;
+        margin-top: 10px;
+        overflow: hidden;
+    }
+    .risk-score-bar-fill {
+        height: 100%;
+        border-radius: 3px;
+        transition: width 0.6s cubic-bezier(0.16,1,0.3,1);
+    }
+    .risk-score-bar-fill.risk-critical,
+    .risk-score-bar-fill.risk-high { background: linear-gradient(90deg, var(--danger), #f97066); }
+    .risk-score-bar-fill.risk-medium { background: linear-gradient(90deg, var(--warning), #fdb022); }
+    .risk-score-bar-fill.risk-low { background: linear-gradient(90deg, var(--success), #32d583); }
+
+    /* Features Card */
+    .dash-features-list {
+        padding: 16px 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    .dash-feature-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 13px;
+        color: var(--text-secondary);
+    }
+    .dash-feature-check {
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        background: rgba(0,229,191,0.08);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        color: var(--primary-color);
+    }
+
+    /* Privacy Info Card */
+    .dash-privacy-info { padding: 16px 20px; }
+    .dash-privacy-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--border-light);
+        font-size: 13px;
+    }
+    .dash-privacy-row:last-child { border-bottom: none; }
+    .dash-privacy-row-label { color: var(--text-secondary); }
+    .dash-privacy-row-value {
+        font-weight: 700;
+        font-size: 12px;
+        padding: 3px 10px;
+        border-radius: 100px;
+        background: var(--primary-light);
+        color: var(--primary-color);
+    }
+
+    /* Highlight card */
+    .dash-card--highlight {
+        background: linear-gradient(135deg, rgba(0,229,191,0.03), rgba(14,165,233,0.02));
+        border-color: rgba(0,229,191,0.08);
+    }
+
+    /* ---------- MODAL ---------- */
+    .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.6);
+        backdrop-filter: blur(8px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        opacity: 0;
+        visibility: hidden;
+        transition: all 0.25s ease;
+    }
+    .modal-backdrop.modal-show {
+        opacity: 1;
+        visibility: visible;
+    }
+    .modal {
+        width: 90%;
+        max-width: 480px;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 20px;
+        box-shadow: 0 24px 64px rgba(0,0,0,0.3);
+        transform: translateY(20px) scale(0.97);
+        transition: all 0.3s cubic-bezier(0.16,1,0.3,1);
+        overflow: hidden;
+    }
+    .modal-backdrop.modal-show .modal {
+        transform: translateY(0) scale(1);
+    }
+    .modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--border-light);
+    }
+    .modal-header h3 {
+        font-size: 16px;
+        font-weight: 700;
+    }
+    .modal-body {
+        padding: 24px;
+        font-size: 14px;
+        color: var(--text-secondary);
+        line-height: 1.6;
+    }
+
+    /* ---------- ROW ANIMATIONS ---------- */
+    .fade-in-scale {
+        animation: rowFadeIn 0.3s ease both;
+    }
+    @keyframes rowFadeIn {
+        from { opacity: 0; transform: translateY(4px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .loading-spinner {
+        width: 24px;
+        height: 24px;
+        border: 3px solid var(--border-color);
+        border-top-color: var(--primary-color);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin: 0 auto 12px;
+    }
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+    .error-text {
+        color: var(--danger);
+        font-size: 13px;
+        text-align: center;
+        padding: 16px;
+    }
+    .loading-text {
+        color: var(--text-tertiary);
+        font-size: 13px;
+        text-align: center;
+        padding: 24px;
+    }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Header -->
+        <div class="dash-header">
+            <div class="dash-header-inner">
+                <div class="dash-header-left">
+                    <div class="dash-logo-icon">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="dash-header-title">VaultBix</div>
+                        <div class="dash-header-sub">Activity Dashboard</div>
+                    </div>
+                </div>
+                <div class="dash-header-right">
+                    <div class="dash-tier-badge" id="earlyAccessStatus">
+                        <span class="dash-tier-dot"></span>
+                        <span id="tierStatusText">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Privacy Banner -->
+        <div class="dash-privacy-banner">
+            <div class="dash-privacy-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+            </div>
+            <div>
+                <div class="dash-privacy-title">Privacy-First: 100% Local</div>
+                <span>All detection happens in your browser. VaultBix makes zero network requests. Activity logs are stored on-device and can be cleared anytime.</span>
+            </div>
+        </div>
+
+        <!-- Statistics Cards -->
+        <div class="dash-stats-grid">
+            <div class="dash-stat-card">
+                <div class="dash-stat-card-header">
+                    <div class="dash-stat-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="dash-stat-value" id="totalBlocks">0</div>
+                <div class="dash-stat-label">Total Events</div>
+            </div>
+            <div class="dash-stat-card">
+                <div class="dash-stat-card-header">
+                    <div class="dash-stat-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M12 6v6l4 2"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="dash-stat-value" id="todayBlocks">0</div>
+                <div class="dash-stat-label">Today's Events</div>
+            </div>
+            <div class="dash-stat-card dash-stat-card-actions">
+                <div class="dash-stat-card-header">
+                    <div class="dash-stat-label">Quick Actions</div>
+                </div>
+                <div class="dash-actions-group">
+                    <button class="dash-action-btn" id="exportJson">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Export
+                    </button>
+                    <button class="dash-action-btn dash-action-btn--danger" id="clearAllBtn">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"/>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                        </svg>
+                        Clear All
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="dash-content">
+            <div class="dash-main">
+                <!-- Activity Log -->
+                <div class="dash-card">
+                    <div class="dash-card-header">
+                        <div class="dash-card-title">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                <polyline points="14 2 14 8 20 8"/>
+                                <line x1="16" y1="13" x2="8" y2="13"/>
+                                <line x1="16" y1="17" x2="8" y2="17"/>
+                            </svg>
+                            Activity Log
+                        </div>
+                        <span class="dash-card-badge" id="logCountBadge">0 events</span>
+                    </div>
+                    <div class="activity-log-wrapper">
+                        <table class="log-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 18%;">Time</th>
+                                    <th style="width: 20%;">Event Type</th>
+                                    <th style="width: 32%;">Source</th>
+                                    <th style="width: 30%;">Details</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logTableBody">
+                                <tr><td colspan="4" class="loading-row">Loading activity...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Event Type Breakdown -->
+                <div class="dash-card">
+                    <div class="dash-card-header">
+                        <div class="dash-card-title">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="18" y1="20" x2="18" y2="10"/>
+                                <line x1="12" y1="20" x2="12" y2="4"/>
+                                <line x1="6" y1="20" x2="6" y2="14"/>
+                            </svg>
+                            Event Types Explained
+                        </div>
+                        <span class="dash-card-subtitle">Click to learn how each protection works</span>
+                    </div>
+                    <div id="typeBreakdown">
+                        <p class="loading-text">Loading statistics...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar -->
+            <div class="dash-sidebar">
+                <!-- Top Risky Domains -->
+                <div class="dash-card">
+                    <div class="dash-card-header">
+                        <div class="dash-card-title">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                                <line x1="12" y1="9" x2="12" y2="13"/>
+                                <line x1="12" y1="17" x2="12.01" y2="17"/>
+                            </svg>
+                            Sites with Most Events
+                        </div>
+                    </div>
+                    <div id="riskyDomains">
+                        <p class="loading-text">Loading sites...</p>
+                    </div>
+                </div>
+
+                <!-- Features Card -->
+                <div class="dash-card dash-card--highlight">
+                    <div class="dash-card-header">
+                        <div class="dash-card-title">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                            </svg>
+                            What VaultBix Detects
+                        </div>
+                    </div>
+                    <div class="dash-features-list">
+                        <div class="dash-feature-item">
+                            <div class="dash-feature-check">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                    <polyline points="20 6 9 17 4 12"/>
+                                </svg>
+                            </div>
+                            <span>API Keys (OpenAI, AWS, Stripe, etc.)</span>
+                        </div>
+                        <div class="dash-feature-item">
+                            <div class="dash-feature-check">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                    <polyline points="20 6 9 17 4 12"/>
+                                </svg>
+                            </div>
+                            <span>Passwords &amp; Credentials</span>
+                        </div>
+                        <div class="dash-feature-item">
+                            <div class="dash-feature-check">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                    <polyline points="20 6 9 17 4 12"/>
+                                </svg>
+                            </div>
+                            <span>Credit Cards &amp; SSNs</span>
+                        </div>
+                        <div class="dash-feature-item">
+                            <div class="dash-feature-check">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                    <polyline points="20 6 9 17 4 12"/>
+                                </svg>
+                            </div>
+                            <span>Private Keys &amp; Database URLs</span>
+                        </div>
+                        <div class="dash-feature-item">
+                            <div class="dash-feature-check">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                    <polyline points="20 6 9 17 4 12"/>
+                                </svg>
+                            </div>
+                            <span>JWT Tokens &amp; Webhooks</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Privacy Card -->
+                <div class="dash-card">
+                    <div class="dash-card-header">
+                        <div class="dash-card-title">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                            </svg>
+                            How VaultBix Works
+                        </div>
+                    </div>
+                    <div class="dash-privacy-info">
+                        <div class="dash-privacy-row">
+                            <span class="dash-privacy-row-label">Network Requests</span>
+                            <span class="dash-privacy-row-value">None (zero)</span>
+                        </div>
+                        <div class="dash-privacy-row">
+                            <span class="dash-privacy-row-label">Log Storage</span>
+                            <span class="dash-privacy-row-value">Local only</span>
+                        </div>
+                        <div class="dash-privacy-row">
+                            <span class="dash-privacy-row-label">Prompt Data</span>
+                            <span class="dash-privacy-row-value">Never stored</span>
+                        </div>
+                        <div class="dash-privacy-row">
+                            <span class="dash-privacy-row-label">Detection</span>
+                            <span class="dash-privacy-row-value">100% local</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal -->
+        <div id="modalBackdrop" class="modal-backdrop" role="dialog" aria-hidden="true">
+            <div class="modal" role="document">
+                <div class="modal-header">
+                    <h3 id="modalTitle">Modal</h3>
+                    <button id="modalClose" class="dash-action-btn" style="padding: 6px 14px; font-size: 12px;">Close</button>
+                </div>
+                <div class="modal-body" id="modalBody"></div>
+            </div>
+        </div>
+    </div>
+    <script src="dashboard.js"></script>
+</body>
+</html>
