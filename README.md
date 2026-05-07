@@ -42,12 +42,12 @@ Strict mode blocks any detected secret before it leaves your browser — the req
 
 1. Clone this repo:
    ```
-   git clone https://github.com/vaultbix/vb.ext.git
+   git clone https://github.com/carlgaopapi-png/vaultbix-extension.git
    ```
 2. Open Chrome and go to `chrome://extensions`
 3. Enable **Developer mode** (top-right toggle)
 4. Click **Load unpacked**
-5. Select the `vb.ext` folder
+5. Select the `vaultbix-extension` folder
 
 ## Project Structure
 
