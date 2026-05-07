@@ -1,986 +1,1029 @@
 /**
- * VaultBix Main Content Script
- * Detects sensitive data in AI chat inputs and provides warnings/blocking.
+ * VaultBix Content Script (v5)
  *
- * Detection is handled by the unified detector (regex + ML + contextual).
- * This file owns adapters, UI, and event wiring only.
+ * Responsibilities:
+ *  1. Inject the page-world interceptor (content/inject.js) so window.fetch
+ *     and XMLHttpRequest can be monkey-patched.
+ *  2. Receive intercepted-request messages from the page world, run local
+ *     detection, and reply with an allow/block verdict.
+ *  3. Hook every <form> on the page so form-POST submissions are scanned
+ *     before they leave the browser (MutationObserver picks up new forms).
+ *  4. Show an in-page alert banner when a leak is blocked, with "Allow once"
+ *     and "View details" actions.
+ *  5. Log incidents to chrome.storage via the background service worker.
  *
- * PRIVACY:
- * - All scanning happens locally in this content script + a Web Worker.
- * - No data is ever sent to any server for detection purposes.
+ * This file is a CLASSIC content script (not an ES module). All detection
+ * logic is bundled inline so there are no import paths to resolve.
  *
- * @file content/main.js
- * @version 5.0.0
+ * 100% local. No data leaves the browser.
  */
 
-import { quickCheck, detectSensitiveData, redactText, RISK_LEVELS } from './detection/detector.js';
-
-(function () {
+(() => {
     'use strict';
 
-    // ========================================================================
-    // CONFIGURATION
-    // ========================================================================
+    if (window.__vaultbixContent) return;
+    window.__vaultbixContent = true;
 
+    // ====================================================================
+    // CONFIG
+    // ====================================================================
     const CONFIG = {
-        INPUT_DEBOUNCE: 300,
-        MUTATION_DEBOUNCE: 150,
-        MIN_TEXT_LENGTH: 8,
         MAX_SCAN_LENGTH: 50000,
-        ELEMENT_POLL_INTERVAL: 500,
-        ELEMENT_MAX_RETRIES: 30,
-        TOAST_DURATION: 4000,
-        TOAST_DURATION_FREE: 5000,
-        MODAL_ANIMATION_MS: 200,
-        ENABLE_PASTE_WARNINGS: true,
-        FEATURE_CHECK_INTERVAL: 60000
+        BANNER_AUTO_DISMISS_MS: 8000,
+        ALLOW_ONCE_TTL_MS: 30000
     };
 
-    // ========================================================================
-    // FEATURE STATE
-    // ========================================================================
+    // ====================================================================
+    // DETECTION PATTERNS
+    // ====================================================================
+    // Each entry: { id, name, type, pattern, risk, validate? }
+    // risk: CRITICAL | HIGH | MEDIUM | LOW
+    //
+    // CRITICAL is reserved for items where leakage means immediate financial,
+    // identity-theft, or full-account-compromise impact: AWS keys, SSNs,
+    // credit cards, private keys, and live API tokens for paid services
+    // (OpenAI, Anthropic, Stripe, GitHub, etc.). In Balanced mode, only
+    // CRITICAL findings actually block the request — everything else warns.
+    const PATTERNS = [
+        // ── API keys ───────────────────────────────────────────────────
+        { id: 'openai_proj', name: 'OpenAI Project Key', type: 'API Key', pattern: /sk-proj-[A-Za-z0-9_-]{20,}/g, risk: 'CRITICAL' },
+        { id: 'openai',      name: 'OpenAI API Key',     type: 'API Key', pattern: /sk-[A-Za-z0-9]{20,}T3BlbkFJ[A-Za-z0-9]{20,}/g, risk: 'CRITICAL' },
+        { id: 'openai_legacy', name: 'OpenAI API Key', type: 'API Key', pattern: /sk-[A-Za-z0-9]{32,}/g, risk: 'CRITICAL',
+          validate: (v) => v.length >= 35 && !v.startsWith('sk-proj-') && !v.startsWith('sk-ant-') },
+        { id: 'anthropic',   name: 'Anthropic API Key',  type: 'API Key', pattern: /sk-ant-[A-Za-z0-9_-]{40,}/g, risk: 'CRITICAL' },
+        { id: 'aws_access',  name: 'AWS Access Key',     type: 'API Key', pattern: /AKIA[0-9A-Z]{16}/g, risk: 'CRITICAL' },
+        { id: 'github_pat',  name: 'GitHub PAT',         type: 'API Key', pattern: /ghp_[A-Za-z0-9]{36}/g, risk: 'CRITICAL' },
+        { id: 'github_oauth',name: 'GitHub OAuth',       type: 'API Key', pattern: /gho_[A-Za-z0-9]{36}/g, risk: 'CRITICAL' },
+        { id: 'github_app',  name: 'GitHub App Token',   type: 'API Key', pattern: /(ghu|ghs|ghr)_[A-Za-z0-9]{36}/g, risk: 'HIGH' },
+        { id: 'stripe_sk',   name: 'Stripe Secret Key',  type: 'API Key', pattern: /sk_live_[A-Za-z0-9]{24,}/g, risk: 'CRITICAL' },
+        { id: 'stripe_sk_test', name: 'Stripe Test Key', type: 'API Key', pattern: /sk_test_[A-Za-z0-9]{24,}/g, risk: 'HIGH' },
+        { id: 'stripe_rk',   name: 'Stripe Restricted',  type: 'API Key', pattern: /rk_(?:live|test)_[A-Za-z0-9]{24,}/g, risk: 'HIGH' },
+        { id: 'stripe_pk',   name: 'Stripe Publishable', type: 'API Key', pattern: /pk_(?:live|test)_[A-Za-z0-9]{24,}/g, risk: 'MEDIUM' },
+        { id: 'google_api',  name: 'Google API Key',     type: 'API Key', pattern: /AIza[A-Za-z0-9_-]{35}/g, risk: 'HIGH' },
+        { id: 'twilio_sid',  name: 'Twilio Account SID', type: 'API Key', pattern: /AC[a-f0-9]{32}/g, risk: 'HIGH' },
+        { id: 'twilio_key',  name: 'Twilio API Key',     type: 'API Key', pattern: /SK[a-f0-9]{32}/g, risk: 'HIGH' },
+        { id: 'slack_tok',   name: 'Slack Token',        type: 'API Key', pattern: /xox[baprs]-[A-Za-z0-9-]{10,}/g, risk: 'HIGH' },
+        { id: 'sendgrid',    name: 'SendGrid Key',       type: 'API Key', pattern: /SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}/g, risk: 'HIGH' },
+        { id: 'npm',         name: 'NPM Token',          type: 'API Key', pattern: /npm_[A-Za-z0-9]{36}/g, risk: 'HIGH' },
 
-    let featureState = {
-        tier: 'free',
-        isPro: false,
-        blockingEnabled: false,
-        redactionEnabled: false,
-        warningsEnabled: true,
-        lastChecked: 0
-    };
+        // ── JWTs ───────────────────────────────────────────────────────
+        { id: 'jwt',         name: 'JWT Token',          type: 'JWT',     pattern: /eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, risk: 'HIGH' },
 
-    let customRules = [];
+        // ── Private keys ───────────────────────────────────────────────
+        { id: 'pem_priv',    name: 'Private Key (PEM)',  type: 'Private Key', pattern: /-----BEGIN\s+(?:RSA\s+|EC\s+|DSA\s+|OPENSSH\s+|PGP\s+)?PRIVATE\s+KEY(?:\s+BLOCK)?-----/g, risk: 'CRITICAL' },
 
-    async function checkFeatures() {
-        try {
-            const response = await sendToBackground({ action: 'check_features' });
-            if (response?.success) {
-                featureState = {
-                    tier: response.tier || 'free',
-                    isPro: response.isPro === true,
-                    blockingEnabled: response.blockingEnabled === true,
-                    redactionEnabled: response.redactionEnabled === true,
-                    warningsEnabled: response.warningsEnabled !== false,
-                    lastChecked: Date.now()
-                };
-            }
-        } catch {
-            featureState.lastChecked = Date.now();
+        // ── credentials embedded in URLs ───────────────────────────────
+        { id: 'url_creds',   name: 'Credentials in URL', type: 'Credentials', pattern: /[a-z][a-z0-9+\-.]*:\/\/[^\s/:@]+:[^\s/:@]+@[^\s]+/gi, risk: 'HIGH' },
+
+        // ── PII ────────────────────────────────────────────────────────
+        { id: 'email',       name: 'Email Address',      type: 'PII', pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,7}\b/g, risk: 'LOW' },
+        { id: 'ssn',         name: 'US SSN',             type: 'PII', pattern: /\b\d{3}-\d{2}-\d{4}\b/g, risk: 'CRITICAL',
+          validate: (v) => {
+              const [a, g, s] = v.split('-').map(Number);
+              return a >= 1 && a <= 899 && a !== 666 && g >= 1 && g <= 99 && s >= 1 && s <= 9999;
+          } },
+        { id: 'cc_visa',     name: 'Credit Card',        type: 'PII', pattern: /\b4[0-9]{12}(?:[0-9]{3})?\b/g, risk: 'CRITICAL', validate: luhnCheck },
+        { id: 'cc_mc',       name: 'Credit Card',        type: 'PII', pattern: /\b5[1-5][0-9]{14}\b/g, risk: 'CRITICAL', validate: luhnCheck },
+        { id: 'cc_amex',     name: 'Credit Card',        type: 'PII', pattern: /\b3[47][0-9]{13}\b/g, risk: 'CRITICAL', validate: luhnCheck },
+        { id: 'cc_discover', name: 'Credit Card',        type: 'PII', pattern: /\b6(?:011|5[0-9]{2})[0-9]{12}\b/g, risk: 'CRITICAL', validate: luhnCheck }
+    ];
+
+    function luhnCheck(v) {
+        const d = v.replace(/\D/g, '');
+        if (d.length < 13 || d.length > 19) return false;
+        let sum = 0, alt = false;
+        for (let i = d.length - 1; i >= 0; i--) {
+            let n = parseInt(d[i], 10);
+            if (alt) { n *= 2; if (n > 9) n -= 9; }
+            sum += n; alt = !alt;
         }
-        return featureState;
+        return sum % 10 === 0;
     }
 
-    async function loadCustomRules() {
-        try {
-            const response = await sendToBackground({ action: 'get_custom_rules' });
-            if (response?.success && Array.isArray(response.rules)) {
-                customRules = response.rules.filter(r => r.enabled);
-            }
-        } catch {
-            customRules = [];
+    // ── Shannon entropy detector for high-entropy generic secrets ──────
+    //
+    // The entropy detector exists to catch obviously-secret-shaped tokens
+    // that don't match a known vendor regex. It is *not* allowed to drive
+    // a block on its own:
+    //   * minimum length raised to 32 chars (was 20)
+    //   * minimum entropy raised to 4.5 bits/char (was 4.0)
+    //   * confidence is always "Low" — high confidence is only granted when
+    //     a regex pattern *also* matches the same span
+    //   * risk is always "LOW" so it can never satisfy a Critical-level
+    //     blocking rule
+    // Anything that slips past those bars produces a warning at most.
+    const ENTROPY_MIN_BITS_PER_CHAR = 4.5;
+    const ENTROPY_MIN_LENGTH = 32;
+
+    function shannonEntropy(str) {
+        if (!str) return 0;
+        const freq = {};
+        for (const c of str) freq[c] = (freq[c] || 0) + 1;
+        let h = 0;
+        const len = str.length;
+        for (const c in freq) {
+            const p = freq[c] / len;
+            h -= p * Math.log2(p);
         }
+        return h;
     }
 
-    async function ensureFeatureState() {
-        if (Date.now() - featureState.lastChecked > CONFIG.FEATURE_CHECK_INTERVAL) {
-            await checkFeatures();
-        }
-        return featureState;
-    }
-
-    // ========================================================================
-    // SITE ADAPTERS
-    // ========================================================================
-
-    const ADAPTERS = {
-        chatgpt: {
-            name: 'ChatGPT',
-            match: /^https:\/\/(chat\.openai\.com|chatgpt\.com)/,
-            getInput: () => document.querySelector(
-                '#prompt-textarea, textarea[data-id="root"], div[contenteditable="true"][class*="ProseMirror"], div.ProseMirror[contenteditable="true"]'
-            ),
-            getSubmit: () => document.querySelector(
-                'button[data-testid="send-button"], button[data-testid="fruitjuice-send-button"], button[aria-label*="Send"]'
-            ),
-            getForm: () => document.querySelector('form'),
-            inputSelector: '#prompt-textarea, div[contenteditable="true"]'
-        },
-        claude: {
-            name: 'Claude',
-            match: /^https:\/\/claude\.ai/,
-            getInput: () => document.querySelector(
-                'div.ProseMirror[contenteditable="true"], div[contenteditable="true"][data-placeholder], fieldset div[contenteditable="true"]'
-            ),
-            getSubmit: () => document.querySelector(
-                'button[aria-label="Send Message"], button[aria-label*="Send"], fieldset button[type="button"]'
-            ),
-            getForm: () => document.querySelector('form, fieldset'),
-            inputSelector: 'div.ProseMirror, div[contenteditable="true"]'
-        },
-        gemini: {
-            name: 'Gemini',
-            match: /^https:\/\/gemini\.google\.com/,
-            getInput: () => {
-                const selectors = [
-                    'rich-textarea div[contenteditable="true"]',
-                    'div.ql-editor[contenteditable="true"]',
-                    'div[contenteditable="true"][aria-label*="prompt" i]',
-                    'div[contenteditable="true"][data-placeholder]',
-                    'div[contenteditable="true"].text-input',
-                    'p[data-placeholder][contenteditable="true"]',
-                    '.input-area div[contenteditable="true"]',
-                    'textarea[aria-label*="prompt" i]',
-                    'textarea'
-                ];
-                for (const sel of selectors) {
-                    const el = document.querySelector(sel);
-                    if (el) return el;
-                }
-                try {
-                    const inputArea = document.querySelector('.input-area, [class*="input"], [class*="prompt"]');
-                    if (inputArea) {
-                        const editable = inputArea.querySelector('[contenteditable="true"]');
-                        if (editable) return editable;
-                    }
-                } catch { /* ignore */ }
-                return document.querySelector('[contenteditable="true"]');
-            },
-            getSubmit: () => document.querySelector(
-                'button[aria-label*="Send" i], button[aria-label*="Submit" i], button.send-button, button[data-test-id="send-button"]'
-            ),
-            getForm: () => document.querySelector('form, .input-area-container, [class*="input-area"]'),
-            inputSelector: 'rich-textarea, div[contenteditable="true"], textarea, p[contenteditable="true"]'
-        },
-        copilot: {
-            name: 'Microsoft Copilot',
-            match: /^https:\/\/(copilot\.microsoft\.com|www\.bing\.com\/(chat|search))/,
-            getInput: () => document.querySelector(
-                'textarea[name="q"], #searchbox, textarea[placeholder*="message" i], .cib-serp-main textarea'
-            ),
-            getSubmit: () => document.querySelector(
-                'button[aria-label*="Submit"], button[type="submit"], #sb_form_go'
-            ),
-            getForm: () => document.querySelector('form'),
-            inputSelector: 'textarea, #searchbox'
-        },
-        github_copilot: {
-            name: 'GitHub Copilot',
-            match: /^https:\/\/github\.com/,
-            getInput: () => document.querySelector(
-                'textarea.js-comment-field, textarea[name="issue[body]"], textarea[name="pull_request[body]"], .comment-form-textarea'
-            ),
-            getSubmit: () => document.querySelector(
-                'button[type="submit"]:not([disabled]), .btn-primary[type="submit"]'
-            ),
-            getForm: () => document.querySelector('form.js-new-comment-form, form.new_issue'),
-            inputSelector: 'textarea.js-comment-field, .comment-form-textarea'
-        },
-        poe: {
-            name: 'Poe',
-            match: /^https:\/\/poe\.com/,
-            getInput: () => document.querySelector('textarea[class*="TextArea"], div[contenteditable="true"]'),
-            getSubmit: () => document.querySelector('button[class*="SendButton"]'),
-            getForm: () => document.querySelector('form'),
-            inputSelector: 'textarea, div[contenteditable="true"]'
-        },
-        perplexity: {
-            name: 'Perplexity',
-            match: /^https:\/\/(www\.)?perplexity\.ai/,
-            getInput: () => document.querySelector('textarea[placeholder*="Ask"], div[contenteditable="true"]'),
-            getSubmit: () => document.querySelector('button[aria-label*="Submit"], button[type="submit"]'),
-            getForm: () => document.querySelector('form'),
-            inputSelector: 'textarea, div[contenteditable="true"]'
-        },
-        you: {
-            name: 'You.com',
-            match: /^https:\/\/you\.com/,
-            getInput: () => document.querySelector('textarea, input[type="text"]'),
-            getSubmit: () => document.querySelector('button[type="submit"]'),
-            getForm: () => document.querySelector('form'),
-            inputSelector: 'textarea, input[type="text"]'
-        },
-        deepseek: {
-            name: 'DeepSeek',
-            match: /^https:\/\/chat\.deepseek\.com/,
-            getInput: () => document.querySelector('textarea, div[contenteditable="true"]'),
-            getSubmit: () => document.querySelector('button[aria-label*="Send" i], button[class*="send" i], button[type="submit"]'),
-            getForm: () => document.querySelector('form'),
-            inputSelector: 'textarea, div[contenteditable="true"]'
-        },
-        grok: {
-            name: 'Grok',
-            match: /^https:\/\/grok\.x\.ai/,
-            getInput: () => document.querySelector('textarea, div[contenteditable="true"]'),
-            getSubmit: () => document.querySelector('button[aria-label*="Send" i], button[type="submit"]'),
-            getForm: () => document.querySelector('form'),
-            inputSelector: 'textarea, div[contenteditable="true"]'
-        },
-        huggingchat: {
-            name: 'HuggingChat',
-            match: /^https:\/\/huggingface\.co\/chat/,
-            getInput: () => document.querySelector('textarea, div[contenteditable="true"]'),
-            getSubmit: () => document.querySelector('button[type="submit"], button[aria-label*="Send" i]'),
-            getForm: () => document.querySelector('form'),
-            inputSelector: 'textarea, div[contenteditable="true"]'
-        },
-        mistral: {
-            name: 'Mistral Le Chat',
-            match: /^https:\/\/chat\.mistral\.ai/,
-            getInput: () => document.querySelector('textarea, div[contenteditable="true"]'),
-            getSubmit: () => document.querySelector('button[type="submit"], button[aria-label*="Send" i]'),
-            getForm: () => document.querySelector('form'),
-            inputSelector: 'textarea, div[contenteditable="true"]'
-        },
-        google_ai_studio: {
-            name: 'Google AI Studio',
-            match: /^https:\/\/labs\.google/,
-            getInput: () => document.querySelector('textarea, div[contenteditable="true"]'),
-            getSubmit: () => document.querySelector('button[aria-label*="Run" i], button[aria-label*="Send" i], button[type="submit"]'),
-            getForm: () => document.querySelector('form'),
-            inputSelector: 'textarea, div[contenteditable="true"]'
-        },
-        generic: {
-            name: 'AI Site',
-            match: /.*/,
-            getInput: () => {
-                const selectors = [
-                    'textarea[placeholder*="message" i]',
-                    'textarea[placeholder*="chat" i]',
-                    'textarea[placeholder*="ask" i]',
-                    'div[contenteditable="true"][role="textbox"]',
-                    'div.ProseMirror[contenteditable="true"]',
-                    'div[contenteditable="true"]',
-                    'textarea:not([readonly])'
-                ];
-                for (const sel of selectors) {
-                    try {
-                        const el = document.querySelector(sel);
-                        if (el) return el;
-                    } catch { /* ignore */ }
-                }
-                return null;
-            },
-            getSubmit: () => document.querySelector(
-                'button[type="submit"], button[aria-label*="send" i], button[aria-label*="submit" i]'
-            ),
-            getForm: () => document.querySelector('form'),
-            inputSelector: 'textarea, div[contenteditable="true"]'
-        }
-    };
-
-    // ========================================================================
-    // STATE
-    // ========================================================================
-
-    let state = {
-        adapter: null,
-        isInitialized: false,
-        isProcessing: false,
-        modalOpen: false,
-        lastScanResult: null,
-        observedInputs: new WeakSet(),
-        mutationObserver: null,
-        initRetryCount: 0
-    };
-
-    let toastContainer = null;
-    let modalOverlay = null;
-
-    // ========================================================================
-    // UTILITIES
-    // ========================================================================
-
-    function escapeHtml(text) {
-        if (!text) return '';
-        try {
-            const div = document.createElement('div');
-            div.textContent = String(text);
-            return div.innerHTML;
-        } catch { return ''; }
-    }
-
-    function debounce(fn, delay) {
-        let timeout;
-        return function (...args) {
-            clearTimeout(timeout);
-            timeout = setTimeout(() => fn.apply(this, args), delay);
-        };
-    }
-
-    function sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-
-    async function sendToBackground(message) {
-        try {
-            return await chrome.runtime.sendMessage(message);
-        } catch {
-            return null;
-        }
-    }
-
-    // ========================================================================
-    // DETECTION BRIDGE
-    // ========================================================================
-
-    /**
-     * Run the unified detector on the given text, then also run any
-     * user-defined custom rules (loaded from storage).
-     */
-    async function analyzeText(text) {
-        const result = await detectSensitiveData(text, CONFIG.MAX_SCAN_LENGTH);
-
-        // Also run custom rules (user-defined patterns stored via the extension)
-        if (customRules.length > 0) {
-            const scanText = text.length > CONFIG.MAX_SCAN_LENGTH ? text.substring(0, CONFIG.MAX_SCAN_LENGTH) : text;
-            const seenCustom = new Set();
-
-            for (const rule of customRules) {
-                try {
-                    const regex = new RegExp(rule.pattern, 'gi');
-                    let match;
-                    while ((match = regex.exec(scanText)) !== null) {
-                        const value = match[0];
-                        if (seenCustom.has(value)) continue;
-                        seenCustom.add(value);
-                        result.findings.push({
-                            source: 'custom',
-                            type: 'CUSTOM_' + rule.id,
-                            id: 'custom_' + rule.id,
-                            name: rule.name || 'Custom Rule',
-                            risk: rule.risk || 'HIGH',
-                            text: value,
-                            redacted: `[${rule.name || 'REDACTED'}]`,
-                            start: match.index,
-                            end: match.index + value.length,
-                            isCustom: true
-                        });
-                    }
-                } catch { /* invalid regex in custom rule */ }
-            }
-
-            // Re-sort after adding custom findings
-            result.findings.sort((a, b) => a.start - b.start);
-
-            // Recompute risk & summary
-            if (result.findings.length > 0) {
-                const risks = result.findings.map(f => f.risk);
-                if (risks.includes('CRITICAL')) result.overallRisk = 'CRITICAL';
-                else if (risks.includes('HIGH')) result.overallRisk = 'HIGH';
-                else if (risks.includes('MEDIUM')) result.overallRisk = 'MEDIUM';
-                else result.overallRisk = 'LOW';
-
-                const types = [...new Set(result.findings.map(f => f.name))];
-                const typeStr = types.length <= 3
-                    ? types.join(', ')
-                    : `${types.slice(0, 2).join(', ')} (+${types.length - 2} more)`;
-                result.summary = {
-                    total: result.findings.length,
-                    types,
-                    message: `${result.findings.length} sensitive item${result.findings.length > 1 ? 's' : ''} detected: ${typeStr}`
-                };
-            }
-        }
-
-        return result;
-    }
-
-    // ========================================================================
-    // UI COMPONENTS
-    // ========================================================================
-
-    function getToastContainer() {
-        if (toastContainer && document.body && document.body.contains(toastContainer)) {
-            return toastContainer;
-        }
-        toastContainer = document.createElement('div');
-        toastContainer.className = 'vb-toast-container';
-        toastContainer.setAttribute('role', 'alert');
-        toastContainer.setAttribute('aria-live', 'polite');
-        injectStyles();
-        if (document.body) document.body.appendChild(toastContainer);
-        return toastContainer;
-    }
-
-    function injectStyles() {
-        if (document.getElementById('vaultbix-styles')) return;
-        const style = document.createElement('style');
-        style.id = 'vaultbix-styles';
-        style.textContent = `
-            .vb-toast-container {
-                position: fixed;
-                bottom: 24px;
-                right: 24px;
-                display: flex;
-                flex-direction: column;
-                gap: 12px;
-                z-index: 2147483647;
-                pointer-events: none;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            }
-            .vb-toast {
-                display: flex;
-                align-items: flex-start;
-                gap: 12px;
-                min-width: 320px;
-                max-width: 420px;
-                padding: 14px 18px;
-                background: #16181d;
-                border: 1px solid #2a2d35;
-                border-radius: 10px;
-                box-shadow: 0 4px 24px rgba(0,0,0,0.4);
-                color: #f4f5f6;
-                font-size: 14px;
-                transform: translateX(120%);
-                opacity: 0;
-                transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-                pointer-events: auto;
-            }
-            .vb-toast.vb-toast-show { transform: translateX(0); opacity: 1; }
-            .vb-toast-danger { border-left: 3px solid #f04438; }
-            .vb-toast-warning { border-left: 3px solid #f79009; }
-            .vb-toast-success { border-left: 3px solid #12b76a; }
-            .vb-toast-info { border-left: 3px solid #00e5bf; }
-            .vb-toast-content { flex: 1; }
-            .vb-toast-title { font-weight: 600; margin-bottom: 2px; }
-            .vb-toast-message { color: #a1a7b3; font-size: 13px; }
-            .vb-toast-close {
-                background: none; border: none; color: #6b7280;
-                cursor: pointer; font-size: 18px; padding: 0; line-height: 1;
-            }
-            .vb-toast-close:hover { color: #f4f5f6; }
-            .vb-modal-overlay {
-                position: fixed; inset: 0;
-                background: rgba(0,0,0,0.75);
-                backdrop-filter: blur(4px);
-                display: flex; align-items: flex-end; justify-content: center;
-                z-index: 2147483647;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                opacity: 0; transition: opacity 0.2s ease;
-            }
-            .vb-modal-overlay.vb-modal-show { opacity: 1; }
-            .vb-modal {
-                width: 100%; max-width: 520px;
-                background: #16181d; border-radius: 16px 16px 0 0;
-                box-shadow: 0 -8px 48px rgba(0,0,0,0.5);
-                overflow: hidden; transform: translateY(100%);
-                transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-            }
-            .vb-modal-overlay.vb-modal-show .vb-modal { transform: translateY(0); }
-            .vb-modal-header {
-                display: flex; align-items: center; justify-content: space-between;
-                padding: 20px 24px; border-bottom: 1px solid #2a2d35;
-            }
-            .vb-modal-title {
-                display: flex; align-items: center; gap: 12px;
-                font-size: 18px; font-weight: 600; color: #f4f5f6;
-            }
-            .vb-risk-badge {
-                padding: 4px 10px; border-radius: 12px;
-                font-size: 11px; font-weight: 600; text-transform: uppercase;
-            }
-            .vb-risk-critical { background: rgba(220,38,38,0.15); color: #dc2626; }
-            .vb-risk-high { background: rgba(240,68,56,0.15); color: #f04438; }
-            .vb-risk-medium { background: rgba(247,144,9,0.15); color: #f79009; }
-            .vb-risk-low { background: rgba(18,183,106,0.15); color: #12b76a; }
-            .vb-modal-body { padding: 24px; }
-            .vb-modal-desc { color: #a1a7b3; font-size: 14px; margin: 0 0 16px; }
-            .vb-findings-list {
-                background: #0d0f12; border: 1px solid #2a2d35;
-                border-radius: 8px; max-height: 200px; overflow-y: auto;
-            }
-            .vb-finding-item {
-                display: flex; align-items: center; justify-content: space-between;
-                padding: 12px 16px; border-bottom: 1px solid #2a2d35;
-            }
-            .vb-finding-item:last-child { border-bottom: none; }
-            .vb-finding-label { font-size: 13px; font-weight: 600; color: #f4f5f6; }
-            .vb-finding-value {
-                font-family: 'JetBrains Mono', monospace; font-size: 12px;
-                padding: 4px 8px; background: rgba(240,68,56,0.1);
-                border-radius: 4px; color: #f04438;
-            }
-            .vb-finding-source {
-                font-size: 10px; padding: 2px 6px; border-radius: 4px;
-                text-transform: uppercase; font-weight: 600; margin-left: 8px;
-            }
-            .vb-finding-source-ml { background: rgba(99,102,241,0.15); color: #6366f1; }
-            .vb-finding-source-regex { background: rgba(0,229,191,0.15); color: #00e5bf; }
-            .vb-finding-source-contextual { background: rgba(247,144,9,0.15); color: #f79009; }
-            .vb-privacy-notice {
-                display: flex; align-items: flex-start; gap: 12px;
-                padding: 14px 16px; background: rgba(0,229,191,0.08);
-                border: 1px solid rgba(0,229,191,0.2); border-radius: 8px; margin-top: 16px;
-            }
-            .vb-privacy-notice svg { flex-shrink: 0; color: #00e5bf; }
-            .vb-privacy-title { font-size: 13px; font-weight: 600; color: #00e5bf; margin-bottom: 2px; }
-            .vb-privacy-desc { font-size: 12px; color: #a1a7b3; }
-            .vb-modal-footer {
-                display: flex; flex-direction: column; gap: 10px;
-                padding: 20px 24px; border-top: 1px solid #2a2d35; background: #0d0f12;
-            }
-            .vb-btn {
-                display: flex; align-items: center; justify-content: center;
-                gap: 8px; padding: 12px 20px; border: none; border-radius: 8px;
-                font-size: 14px; font-weight: 600; cursor: pointer;
-                transition: all 0.15s ease;
-            }
-            .vb-btn-primary { background: #00e5bf; color: #0d0f12; }
-            .vb-btn-primary:hover { background: #00c9a7; transform: translateY(-1px); }
-            .vb-btn-secondary { background: transparent; color: #a1a7b3; border: 1px solid #2a2d35; }
-            .vb-btn-secondary:hover { background: #1e2128; color: #f4f5f6; }
-            .vb-btn-ghost { background: #1e2128; color: #f4f5f6; }
-            .vb-btn-ghost:hover { background: #252830; }
-        `;
-        try { document.head.appendChild(style); } catch { /* ignore */ }
-    }
-
-    function showToast({ title = '', message = '', type = 'info', duration = CONFIG.TOAST_DURATION }) {
-        try {
-            const container = getToastContainer();
-            if (!container) return { dismiss: () => {} };
-            const toast = document.createElement('div');
-            toast.className = `vb-toast vb-toast-${type}`;
-            toast.innerHTML = `
-                <div class="vb-toast-content">
-                    ${title ? `<div class="vb-toast-title">${escapeHtml(title)}</div>` : ''}
-                    <div class="vb-toast-message">${escapeHtml(message)}</div>
-                </div>
-                <button class="vb-toast-close" aria-label="Dismiss">\u00d7</button>
-            `;
-            container.appendChild(toast);
-            requestAnimationFrame(() => { toast.classList.add('vb-toast-show'); });
-            const dismiss = () => {
-                toast.classList.remove('vb-toast-show');
-                setTimeout(() => { try { toast.remove(); } catch {} }, 300);
-            };
-            try { toast.querySelector('.vb-toast-close').addEventListener('click', dismiss); } catch {}
-            if (duration > 0) setTimeout(dismiss, duration);
-            return { dismiss };
-        } catch {
-            return { dismiss: () => {} };
-        }
-    }
-
-    function showBlockModal({ findings, overallRisk, onRedact, onOverride, onCancel }) {
-        try {
-            if (modalOverlay) modalOverlay.remove();
-            state.modalOpen = true;
-            injectStyles();
-
-            const riskClass = overallRisk === 'CRITICAL' ? 'critical' : overallRisk === 'HIGH' ? 'high' : overallRisk === 'MEDIUM' ? 'medium' : 'low';
-            const riskInfo = RISK_LEVELS[overallRisk] || RISK_LEVELS.HIGH;
-            const riskColor = riskInfo.color;
-
-            const findingsHtml = findings.slice(0, 5).map(f => {
-                const sourceClass = f.source === 'ml' ? 'ml' : f.source === 'contextual' ? 'contextual' : 'regex';
-                return `
-                    <div class="vb-finding-item">
-                        <span class="vb-finding-label">
-                            ${escapeHtml(f.name)}
-                            <span class="vb-finding-source vb-finding-source-${sourceClass}">${sourceClass}</span>
-                        </span>
-                        <code class="vb-finding-value">${escapeHtml(f.redacted)}</code>
-                    </div>
-                `;
-            }).join('');
-
-            modalOverlay = document.createElement('div');
-            modalOverlay.className = 'vb-modal-overlay';
-            modalOverlay.innerHTML = `
-                <div class="vb-modal">
-                    <div class="vb-modal-header">
-                        <div class="vb-modal-title">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${riskColor}" stroke-width="2">
-                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                                <path d="M12 8v4"/><path d="M12 16h.01"/>
-                            </svg>
-                            Sensitive Data Detected
-                        </div>
-                        <span class="vb-risk-badge vb-risk-${riskClass}">${overallRisk} Risk</span>
-                    </div>
-                    <div class="vb-modal-body">
-                        <p class="vb-modal-desc">
-                            VaultBix detected <strong>${findings.length}</strong> sensitive item${findings.length > 1 ? 's' : ''}
-                            that could be exposed to this AI tool.
-                        </p>
-                        <div class="vb-findings-list">
-                            ${findingsHtml}
-                            ${findings.length > 5 ? `<div class="vb-finding-item" style="justify-content: center; color: #6b7280;">+ ${findings.length - 5} more items</div>` : ''}
-                        </div>
-                        <div class="vb-privacy-notice">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                            </svg>
-                            <div>
-                                <div class="vb-privacy-title">100% Local Analysis</div>
-                                <div class="vb-privacy-desc">All detection runs in your browser. Nothing is sent to any server.</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="vb-modal-footer">
-                        <button class="vb-btn vb-btn-primary" data-action="redact">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                            </svg>
-                            Redact &amp; Continue Safely
-                        </button>
-                        <button class="vb-btn vb-btn-secondary" data-action="override">
-                            Send Anyway (logged locally)
-                        </button>
-                        <button class="vb-btn vb-btn-ghost" data-action="cancel">Cancel</button>
-                    </div>
-                </div>
-            `;
-
-            if (document.body) document.body.appendChild(modalOverlay);
-            requestAnimationFrame(() => { modalOverlay.classList.add('vb-modal-show'); });
-
-            const close = () => {
-                try {
-                    modalOverlay.classList.remove('vb-modal-show');
-                    setTimeout(() => {
-                        try { modalOverlay.remove(); } catch {}
-                        modalOverlay = null;
-                        state.modalOpen = false;
-                    }, CONFIG.MODAL_ANIMATION_MS);
-                } catch { state.modalOpen = false; }
-            };
-
-            try {
-                modalOverlay.querySelector('[data-action="redact"]').addEventListener('click', () => { close(); onRedact?.(); });
-                modalOverlay.querySelector('[data-action="override"]').addEventListener('click', () => { close(); onOverride?.(); });
-                modalOverlay.querySelector('[data-action="cancel"]').addEventListener('click', () => { close(); onCancel?.(); });
-                modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) { close(); onCancel?.(); } });
-            } catch {}
-
-            const handleEscape = (e) => {
-                if (e.key === 'Escape') {
-                    document.removeEventListener('keydown', handleEscape);
-                    close();
-                    onCancel?.();
-                }
-            };
-            document.addEventListener('keydown', handleEscape);
-
-            return { close };
-        } catch (error) {
-            state.modalOpen = false;
-            return { close: () => {} };
-        }
-    }
-
-    // ========================================================================
-    // ACTIVITY LOGGING
-    // ========================================================================
-
-    async function logActivity(action, findings) {
-        try {
-            const details = findings.map(f => f.name).join(', ');
-            await sendToBackground({
-                action: 'client_side_detection',
-                type: action,
-                details: details,
-                url: window.location.href
+    function detectHighEntropySecrets(text) {
+        const findings = [];
+        const tokenRe = new RegExp(`[A-Za-z0-9_\\-+/=]{${ENTROPY_MIN_LENGTH},}`, 'g');
+        let m;
+        while ((m = tokenRe.exec(text)) !== null) {
+            const value = m[0];
+            if (value.length > 200) continue; // skip giant blobs
+            const hasUpper = /[A-Z]/.test(value);
+            const hasLower = /[a-z]/.test(value);
+            const hasDigit = /\d/.test(value);
+            if (!(hasUpper && hasLower && hasDigit)) continue;
+            // Pre-flight: skip obvious false positives like hex hashes,
+            // CSS class blobs, base64 image fragments, etc.
+            if (isWhitelistedToken(value)) continue;
+            const ent = shannonEntropy(value);
+            if (ent < ENTROPY_MIN_BITS_PER_CHAR) continue;
+            findings.push({
+                id: 'entropy',
+                name: 'High-entropy Secret',
+                type: 'Secret',
+                // Entropy alone never produces HIGH or CRITICAL risk, so
+                // the blocking rules below cannot fire on this kind of
+                // finding. It will only ever surface as a Low-confidence
+                // warning the user can ignore.
+                risk: 'LOW',
+                value,
+                start: m.index,
+                end: m.index + value.length,
+                confidence: 'Low'
             });
-        } catch {
-            // fail silently
         }
+        return findings;
     }
 
-    // ========================================================================
-    // INPUT HANDLING
-    // ========================================================================
+    // ====================================================================
+    // FALSE-POSITIVE WHITELIST
+    // ====================================================================
+    // Strings that match any of these checks are skipped before any
+    // detection runs. The goal is to keep the noisy stuff (CSS hashes,
+    // base64 images, content-hash filenames, color codes, hex digests)
+    // from ever reaching the regex/entropy stages.
 
-    function getInputText(input) {
-        if (!input) return '';
-        try {
-            if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') return input.value || '';
-            if (input.isContentEditable) return input.textContent || input.innerText || '';
-            return input.value || input.textContent || '';
-        } catch { return ''; }
+    // A token is a *single* candidate string we extracted from a body or
+    // URL. Tokens shorter than this are never considered secrets — real
+    // API keys are always at least 16 characters.
+    const MIN_TOKEN_LENGTH = 16;
+
+    // Quick check for "looks like just hex" — covers SHA-1/256/512 digests,
+    // CSS hex colors (#ffffff), and content-hash filenames like
+    // `app.f3a1b2c4.js`. We also accept dashes/underscores because Webpack
+    // and friends like to throw those in.
+    function isMostlyHex(s) {
+        if (!s) return false;
+        const stripped = s.replace(/[-_.]/g, '');
+        if (stripped.length === 0) return false;
+        const hexChars = stripped.match(/[0-9a-fA-F]/g);
+        if (!hexChars) return false;
+        return hexChars.length / stripped.length >= 0.95;
     }
 
-    function setInputText(input, text) {
-        if (!input) return false;
-        try {
-            if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') {
-                input.value = text;
-                input.dispatchEvent(new Event('input', { bubbles: true }));
-                input.dispatchEvent(new Event('change', { bubbles: true }));
-                return true;
-            }
-            if (input.isContentEditable) {
-                input.textContent = text;
-                input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
-                return true;
-            }
-        } catch { /* ignore */ }
+    // Looks like a CSS hex color (#fff, #ffffff, #ffffffff)
+    function isHexColor(s) {
+        return /^#?[0-9a-fA-F]{3,8}$/.test(s);
+    }
+
+    // Looks like a content-hash filename: `main.4f3b2a1c.js`, `app.css?v=ab12cd34`
+    function isContentHashFilename(s) {
+        return /\.[A-Fa-f0-9]{6,}\.(js|css|mjs|map|woff2?|png|jpg|jpeg|gif|svg)(\?.*)?$/.test(s);
+    }
+
+    // Whitelist for an *individual* candidate token (entropy match, etc.)
+    function isWhitelistedToken(value) {
+        if (!value) return true;
+        if (value.length < MIN_TOKEN_LENGTH) return true;
+        if (isHexColor(value)) return true;
+        if (isMostlyHex(value)) return true;
+        if (isContentHashFilename(value)) return true;
         return false;
     }
 
-    // ========================================================================
-    // CORE DETECTION & BLOCKING
-    // ========================================================================
+    // Whitelist for a *whole haystack* — the URL+headers+body we are about
+    // to scan. Returns true if we should skip detection entirely.
+    function isWhitelistedHaystack(haystack, url) {
+        if (!haystack) return true;
 
-    async function checkAndBlock(input, event) {
-        if (state.isProcessing || state.modalOpen) return false;
+        // 1. Data URIs (especially base64 images)
+        if (/^data:image\//i.test(haystack.trimStart())) return true;
+        if (url && /^data:image\//i.test(url)) return true;
 
-        const text = getInputText(input);
-        if (!text || !quickCheck(text)) return false;
-
-        state.isProcessing = true;
-        const { findings, overallRisk, summary } = await analyzeText(text);
-        state.lastScanResult = { findings, overallRisk, summary, timestamp: Date.now() };
-
-        if (findings.length === 0) { state.isProcessing = false; return false; }
-
-        const features = await ensureFeatureState();
-
-        if (!features.warningsEnabled) {
-            state.isProcessing = false;
-            return false;
+        // 2. URL hash fragment only (e.g. SPA navigation #/foo)
+        if (url) {
+            try {
+                const u = new URL(url, location.href);
+                // Pure hash navigation — no body, no query — almost never carries secrets
+                if (u.hash && !u.search && !haystack.replace(url, '').trim()) return true;
+                // Static asset loads (script src, stylesheet, font, image, etc.)
+                if (/\.(js|mjs|css|woff2?|ttf|otf|eot|png|jpe?g|gif|svg|webp|ico|map)(\?|$)/i.test(u.pathname)) {
+                    return true;
+                }
+                // Content-hash filename pattern in the URL path
+                if (isContentHashFilename(u.pathname)) return true;
+            } catch { /* malformed URL — fall through */ }
         }
 
-        // Free mode or blocking disabled: warn only
-        if (!features.blockingEnabled) {
-            showToast({
-                title: 'Sensitive Data Detected',
-                message: summary.message,
-                type: 'warning',
-                duration: CONFIG.TOAST_DURATION_FREE
-            });
-            logActivity('PROMPT_DETECTED', findings).catch(() => {});
-            state.isProcessing = false;
-            return false;
+        // 3. CSS class / style attribute string (extension is most likely
+        //    being asked to scan a serialized DOM fragment)
+        if (/\bclass=["'][^"']{0,200}["']/.test(haystack) && haystack.length < 400) {
+            // It's mostly markup attributes, no obvious payload
+            return true;
         }
+        if (/^style\s*=/.test(haystack.trim())) return true;
 
-        // Blocking enabled but low risk: warn only
-        if (overallRisk === 'LOW') {
-            showToast({
-                title: 'Low Risk Data Detected',
-                message: summary.message,
-                type: 'warning'
-            });
-            logActivity('PROMPT_DETECTED', findings).catch(() => {});
-            state.isProcessing = false;
-            return false;
-        }
-
-        // Medium/High/Critical risk with blocking enabled: show modal
-        return new Promise((resolve) => {
-            showBlockModal({
-                findings,
-                overallRisk,
-                onRedact: async () => {
-                    if (features.redactionEnabled) {
-                        const redactedContent = redactText(text, findings);
-                        const success = setInputText(input, redactedContent);
-                        if (success) {
-                            showToast({ title: 'Content Redacted', message: 'Sensitive data safely removed', type: 'success' });
-                        }
-                    }
-                    await logActivity('PROMPT_REDACTED', findings);
-                    state.isProcessing = false;
-                    setTimeout(() => {
-                        try { const submitBtn = state.adapter?.getSubmit?.(); if (submitBtn) submitBtn.click(); } catch {}
-                    }, 150);
-                    resolve(true);
-                },
-                onOverride: async () => {
-                    showToast({ title: 'Override Logged', message: 'Action recorded locally', type: 'warning' });
-                    await logActivity('PROMPT_OVERRIDDEN', findings);
-                    state.isProcessing = false;
-                    setTimeout(() => {
-                        try { const submitBtn = state.adapter?.getSubmit?.(); if (submitBtn) submitBtn.click(); } catch {}
-                    }, 150);
-                    resolve(true);
-                },
-                onCancel: () => { state.isProcessing = false; resolve(true); }
-            });
-        });
+        return false;
     }
 
-    // ========================================================================
-    // EVENT HANDLERS
-    // ========================================================================
+    // ====================================================================
+    // QUICK CHECK + FULL DETECTION
+    // ====================================================================
+    const QUICK_CHECK = [
+        /sk-/, /AKIA/, /ghp_/, /gho_/, /ghu_/, /ghs_/, /xox[baprs]-/,
+        /-----BEGIN/, /eyJ[A-Za-z0-9]/, /AC[a-f0-9]{20}/, /SK[a-f0-9]{20}/,
+        /AIza/, /SG\./, /\d{3}-\d{2}-\d{4}/, /:\/\/[^\s/:@]+:[^\s/:@]+@/
+    ];
+
+    function quickCheck(text) {
+        if (!text || text.length < 10) return false;
+        if (QUICK_CHECK.some((re) => re.test(text))) return true;
+        // any token long enough to potentially be a secret
+        return /[A-Za-z0-9_\-+/=]{20,}/.test(text);
+    }
+
+    function riskToConfidence(risk) {
+        if (risk === 'CRITICAL' || risk === 'HIGH') return 'High';
+        if (risk === 'MEDIUM') return 'Medium';
+        return 'Low';
+    }
+
+    // Numeric ordering so we can compare risks easily.
+    const RISK_RANK = { LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 };
+    function highestRiskOf(findings) {
+        let top = null;
+        let topRank = 0;
+        for (const f of findings) {
+            const r = RISK_RANK[f.risk] || 0;
+            if (r > topRank) { topRank = r; top = f.risk; }
+        }
+        return top;
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Prefix masking. Controls how much of a matched secret survives in
+    // the dashboard preview as the "AKIA••••" / "sk-ant-••••" indicator.
+    //
+    // Two principles:
+    //   1. Only ever expose the publicly-known type marker, never random
+    //      entropy bytes. `sk-ant-` identifies a key TYPE (public info);
+    //      4 chars of an AWS_SECRET would be 4 chars of recoverable entropy.
+    //   2. Anything that has no public type marker — PII, raw entropy
+    //      hits, embedded-credential matches — gets length 0. The whole
+    //      value is sensitive there, so the preview shows only dots.
+    //
+    // Default for unmapped pattern ids is 4. Comment after each entry
+    // shows the literal prefix so reviewers can see this stays harmless.
+    const KNOWN_PREFIXES = {
+        // ── identified API keys (public type markers) ──
+        aws_access_key:         4,  // AKIA
+        github_personal_token:  4,  // ghp_
+        github_oauth_token:     4,  // gho_
+        github_app_token:       4,  // ghu_
+        github_server_token:    4,  // ghs_
+        github_refresh_token:   4,  // ghr_
+        gitlab_token:           6,  // glpat-
+        openai_api_key:         3,  // sk-
+        openai_project_key:     8,  // sk-proj-
+        openai_key_new:         3,  // sk-
+        anthropic_api_key:      7,  // sk-ant-
+        slack_token:            5,  // xoxb- / xoxp- / xoxa- / xoxs-
+        stripe_secret_key:      8,  // sk_live_ / sk_test_
+        stripe_restricted_key:  8,  // rk_live_ / rk_test_
+        stripe_publishable_key: 8,  // pk_live_ / pk_test_
+        google_api_key:         4,  // AIza
+        npm_token:              4,  // npm_
+        pypi_token:             5,  // pypi-
+        sendgrid_key:           3,  // SG.
+        jwt:                    3,  // eyJ
+        bearer_token:           7,  // "Bearer " (incl. trailing space)
+        basic_auth:             6,  // "Basic "  (incl. trailing space)
+
+        // ── SECURITY: length 0 — no prefix exposure ──
+        // These pattern ids match values where the first characters are
+        // genuinely identifying. Even 4 chars correlates dangerously with
+        // timestamp + destination URL: first 4 of an SSN ("123-") leak the
+        // area, first 4 of a credit card are the IIN (issuer), first chars
+        // of an email reveal the user. Entropy hits are random secrets
+        // with no public marker — first 4 chars are recoverable entropy.
+        ssn:                    0,
+        credit_card_visa:       0,
+        credit_card_mastercard: 0,
+        credit_card_amex:       0,
+        credit_card_discover:   0,
+        email:                  0,
+        phone_us:               0,
+        phone_intl:             0,
+        ip_address:             0,
+        entropy:                0   // unidentified high-entropy: value IS the secret
+    };
+
+    function getPrefix(patId, value) {
+        if (!value) return '';
+        const len = KNOWN_PREFIXES[patId] != null ? KNOWN_PREFIXES[patId] : 4;
+        return value.slice(0, len);
+    }
+
+    async function sha256Hex(value) {
+        if (!value) return '';
+        const data = new TextEncoder().encode(value);
+        const buf = await crypto.subtle.digest('SHA-256', data);
+        return Array.from(new Uint8Array(buf))
+            .map((b) => b.toString(16).padStart(2, '0'))
+            .join('');
+    }
+
+    // Mutates findings in-place: replaces the private f._value with
+    // f.hash. The raw secret never leaves the content script after this.
+    async function attachHashesAndStripValues(findings) {
+        for (const f of findings) {
+            if (f._value != null) {
+                f.hash = await sha256Hex(f._value);
+                delete f._value;
+            }
+        }
+        return findings;
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Detection dedup. ChatGPT (and friends) fire many rapid requests
+    // per user action — streaming chunks, autocomplete probes, telemetry.
+    // Without dedup, one paste of a secret would trigger 100+ identical
+    // banners and incident rows.
+    //
+    // Strategy: keep a small Map of recently-seen hashes with absolute
+    // expiry timestamps. If any finding's hash is still in the map, skip
+    // the banner and incident log (the verdict still applies). The map
+    // is capped at DEDUP_MAX_ENTRIES; expired entries are pruned lazily
+    // on each check rather than via setInterval.
+    const DEDUP_COOLDOWN_MS = 10_000;
+    const DEDUP_MAX_ENTRIES = 50;
+    const recentHashes = new Map(); // hash -> expireAt timestamp (ms)
+
+    function pruneExpiredHashes(now) {
+        for (const [h, exp] of recentHashes) {
+            if (exp <= now) recentHashes.delete(h);
+        }
+    }
+
+    // Returns true if any of the given hashes is still in the cooldown
+    // window (treat as a duplicate). Otherwise registers all hashes for
+    // the cooldown window and returns false. Mutates recentHashes.
+    function isDuplicateDetection(hashes) {
+        if (!hashes || hashes.length === 0) return false;
+        const now = Date.now();
+        pruneExpiredHashes(now);
+        for (const h of hashes) {
+            if (recentHashes.has(h)) return true;
+        }
+        const expireAt = now + DEDUP_COOLDOWN_MS;
+        for (const h of hashes) {
+            recentHashes.set(h, expireAt);
+        }
+        // Cap. Drop earliest-expiring entries when over the size limit.
+        if (recentHashes.size > DEDUP_MAX_ENTRIES) {
+            const sorted = [...recentHashes.entries()].sort((a, b) => a[1] - b[1]);
+            for (let i = 0; i < sorted.length - DEDUP_MAX_ENTRIES; i++) {
+                recentHashes.delete(sorted[i][0]);
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Run full detection on a string. Returns:
+     *   { findings: Finding[], blocked: bool, topType: string }
+     * Finding: { id, name, type, risk, confidence, prefix, length, _value, start, end }
+     * `_value` is the raw matched secret. It MUST be hashed + stripped via
+     * attachHashesAndStripValues() before the incident leaves this script.
+     */
+    function detect(text) {
+        if (!text || typeof text !== 'string') return { findings: [], topType: null };
+        const scanText = text.length > CONFIG.MAX_SCAN_LENGTH ? text.slice(0, CONFIG.MAX_SCAN_LENGTH) : text;
+
+        const findings = [];
+        const seenSpans = []; // [[start,end]]
+        // Track regex-confirmed spans so an entropy hit landing on the
+        // same range can be upgraded to High confidence (the only path
+        // to High confidence — entropy alone never qualifies).
+        const regexSpans = [];
+
+        function spansOverlap(start, end) {
+            for (const [s, e] of seenSpans) {
+                if (start < e && end > s) return true;
+            }
+            return false;
+        }
+
+        function regexConfirms(start, end) {
+            for (const [s, e] of regexSpans) {
+                if (start < e && end > s) return true;
+            }
+            return false;
+        }
+
+        // Layer 1: regex patterns
+        for (const pat of PATTERNS) {
+            const re = new RegExp(pat.pattern.source, pat.pattern.flags.includes('g') ? pat.pattern.flags : pat.pattern.flags + 'g');
+            let m;
+            while ((m = re.exec(scanText)) !== null) {
+                const value = m[0];
+                if (pat.validate && !pat.validate(value)) continue;
+                // Skip matches shorter than the minimum-token bar or that
+                // look like CSS/hex noise. Vendor patterns already have
+                // length floors above 16, but the whitelist is cheap.
+                if (isWhitelistedToken(value)) continue;
+                if (spansOverlap(m.index, m.index + value.length)) continue;
+                seenSpans.push([m.index, m.index + value.length]);
+                regexSpans.push([m.index, m.index + value.length]);
+                findings.push({
+                    id: pat.id,
+                    name: pat.name,
+                    type: pat.id,                       // was pat.type (always undefined); pat.id is the real identifier
+                    risk: pat.risk,
+                    confidence: riskToConfidence(pat.risk),
+                    prefix: getPrefix(pat.id, value),   // public type marker only; '' for PII / entropy
+                    length: value.length,
+                    _value: value,                      // private — hashed and stripped before send
+                    start: m.index,
+                    end: m.index + value.length
+                });
+            }
+        }
+
+        // Layer 2: high-entropy secrets. We do not produce HIGH confidence
+        // unless a regex pattern *also* covers the same span. Standalone
+        // entropy hits are LOW/Low and warn-only.
+        for (const f of detectHighEntropySecrets(scanText)) {
+            if (spansOverlap(f.start, f.end)) continue;
+            seenSpans.push([f.start, f.end]);
+            const confirmed = regexConfirms(f.start, f.end);
+            findings.push({
+                id: f.id,
+                name: f.name,
+                type: f.type,
+                risk: confirmed ? 'HIGH' : 'LOW',
+                confidence: confirmed ? 'High' : 'Low',
+                prefix: getPrefix(f.id, f.value),   // f.id === 'entropy' → '' (length-0 mapped)
+                length: f.value.length,
+                _value: f.value,
+                start: f.start,
+                end: f.end
+            });
+        }
+
+        // Sort by position for stable display
+        findings.sort((a, b) => a.start - b.start);
+
+        // Determine "top" type for the banner headline (prefer the highest-risk match)
+        let topType = null;
+        if (findings.length > 0) {
+            const ordered = [...findings].sort((a, b) => (RISK_RANK[b.risk] || 0) - (RISK_RANK[a.risk] || 0));
+            topType = ordered[0].type;
+        }
+
+        return { findings, topType };
+    }
+
+    // ====================================================================
+    // SETTINGS & ALLOWLIST
+    // ====================================================================
+    const STORAGE_KEYS = {
+        SETTINGS: 'vaultbix_settings_v5',
+        ALLOWED_SITES: 'vaultbix_allowed_sites_v5'
+    };
+
+    let settings = {
+        protectionEnabled: true,
+        sensitivity: 'balanced', // strict | balanced | minimal
+        // Until the user finishes the onboarding flow, the content script
+        // operates in "warn-only" mode regardless of the stored sensitivity.
+        firstRunCompleted: false
+    };
+
+    let allowedSites = {}; // { hostname: true }
+    const allowOnceUntil = new Map(); // hostname -> expiry timestamp
+
+    // ====================================================================
+    // USER-INPUT TRACKING
+    // ====================================================================
+    // VaultBix only scans requests that plausibly carry user-typed data.
+    // We listen for input/keydown/paste events on textareas, inputs, and
+    // contenteditable elements, and consider the page "actively receiving
+    // user input" for a short window after the most recent event. Any
+    // request that fires outside that window is allowed through silently.
+    //
+    // This stops the extension from scanning every analytics ping, image
+    // load, telemetry beacon, or framework background fetch — the source
+    // of nearly all the false-positive blocks reported in v5.
+    const USER_INPUT_WINDOW_MS = 10_000;
+    let lastUserInputAt = 0;
+
+    function isUserInputTarget(el) {
+        if (!el || el.nodeType !== 1) return false;
+        const tag = el.tagName;
+        if (tag === 'TEXTAREA') return true;
+        if (tag === 'INPUT') {
+            const type = (el.type || '').toLowerCase();
+            // Skip non-text inputs (radio, checkbox, file, button, etc.)
+            const skip = new Set(['button', 'submit', 'reset', 'image', 'file', 'checkbox', 'radio', 'range', 'color']);
+            return !skip.has(type);
+        }
+        if (el.isContentEditable) return true;
+        return false;
+    }
+
+    function markUserInput(e) {
+        try {
+            if (isUserInputTarget(e.target)) {
+                lastUserInputAt = Date.now();
+            }
+        } catch { /* ignore */ }
+    }
+
+    function hasRecentUserInput() {
+        return Date.now() - lastUserInputAt < USER_INPUT_WINDOW_MS;
+    }
+
+    // Capture phase so framework stopPropagation calls can't hide events from us.
+    document.addEventListener('input',   markUserInput, true);
+    document.addEventListener('keydown', markUserInput, true);
+    document.addEventListener('paste',   markUserInput, true);
+
+    async function loadSettings() {
+        try {
+            const r = await chrome.storage.local.get([STORAGE_KEYS.SETTINGS, STORAGE_KEYS.ALLOWED_SITES]);
+            if (r[STORAGE_KEYS.SETTINGS]) settings = { ...settings, ...r[STORAGE_KEYS.SETTINGS] };
+            if (r[STORAGE_KEYS.ALLOWED_SITES]) allowedSites = r[STORAGE_KEYS.ALLOWED_SITES] || {};
+        } catch { /* default settings remain */ }
+    }
+
+    function siteHostname() {
+        try { return location.hostname; } catch { return ''; }
+    }
+
+    function isSiteAllowed() {
+        const h = siteHostname();
+        if (allowedSites[h]) return true;
+        const until = allowOnceUntil.get(h);
+        if (until && Date.now() < until) return true;
+        return false;
+    }
+
+    /**
+     * Decide whether to block a finding-bearing request given the user's
+     * current sensitivity tier.
+     *
+     *   - first-run not done → warn-only (never block)
+     *   - protection paused  → warn-only (never block)
+     *   - strict             → block any detection
+     *   - balanced           → block CRITICAL only, warn for the rest
+     *   - minimal            → never block (warns are also gated to CRITICAL,
+     *                          see filterForMinimal below)
+     */
+    function shouldBlockForRisk(risk) {
+        if (!settings.protectionEnabled) return false;
+        if (!settings.firstRunCompleted) return false;
+        if (settings.sensitivity === 'strict') return true;
+        if (settings.sensitivity === 'balanced') return risk === 'CRITICAL';
+        return false; // minimal — never block
+    }
+
+    /**
+     * In Minimal mode the user has explicitly asked to ignore everything
+     * that isn't a Critical leak. Drop non-critical findings entirely so
+     * we neither warn nor log them.
+     */
+    function filterForMinimal(findings) {
+        if (settings.sensitivity !== 'minimal') return findings;
+        return findings.filter((f) => f.risk === 'CRITICAL');
+    }
+
+    // ====================================================================
+    // PAGE-WORLD INTERCEPTOR
+    // ----
+    // The interceptor (content/inject.js) is registered as a separate
+    // content script with `world: "MAIN"`, so Chrome runs it directly in
+    // the page context at document_start. Nothing to inject here.
+    // ====================================================================
+
+    // ====================================================================
+    // MESSAGE BRIDGE: page world ↔ content script
+    // ====================================================================
+    function postVerdict(id, allow) {
+        window.postMessage({
+            source: 'vaultbix-cs',
+            kind: 'verdict',
+            id,
+            allow
+        }, '*');
+    }
+
+    function destinationFromUrl(url) {
+        try {
+            const u = new URL(url, location.href);
+            return u.hostname || url;
+        } catch {
+            return url || 'unknown';
+        }
+    }
+
+    function fullDestination(url) {
+        try {
+            const u = new URL(url, location.href);
+            return u.origin + u.pathname;
+        } catch {
+            return url || 'unknown';
+        }
+    }
+
+    async function handlePageRequest(payload) {
+        const { id, url, method, body, headers } = payload;
+
+        if (!settings.protectionEnabled || isSiteAllowed()) {
+            postVerdict(id, true);
+            return;
+        }
+
+        // ── Scope filter #1: only inspect requests that plausibly carry
+        //    something the user typed. Background telemetry, framework
+        //    fetches, image loads, etc. all sail through silently.
+        if (!hasRecentUserInput()) {
+            postVerdict(id, true);
+            return;
+        }
+
+        // ── Scope filter #2: pre-flight whitelist (data: URIs, static
+        //    asset loads, content-hash filenames, CSS-only payloads).
+        if (isWhitelistedHaystack([url || '', headers || '', body || ''].join('\n'), url)) {
+            postVerdict(id, true);
+            return;
+        }
+
+        // Combine all parts of the request that could carry secrets
+        const haystack = [url || '', headers || '', body || ''].join('\n');
+        if (!quickCheck(haystack)) {
+            postVerdict(id, true);
+            return;
+        }
+
+        let { findings, topType } = detect(haystack);
+        // Minimal mode: drop everything that isn't Critical so it never
+        // even surfaces a warning.
+        findings = filterForMinimal(findings);
+        if (findings.length === 0) {
+            postVerdict(id, true);
+            return;
+        }
+        // Recompute topType after the minimal-mode filter.
+        if (findings.length > 0) {
+            const ordered = [...findings].sort((a, b) => (RISK_RANK[b.risk] || 0) - (RISK_RANK[a.risk] || 0));
+            topType = ordered[0].type;
+        }
+
+        const highestRisk = highestRiskOf(findings) || 'LOW';
+
+        const block = shouldBlockForRisk(highestRisk);
+        const destinationHost = destinationFromUrl(url);
+        const destinationFull = fullDestination(url);
+
+        const incident = {
+            id: 'inc_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            timestamp: Date.now(),
+            destination: destinationHost,
+            destinationFull,
+            method: method || 'GET',
+            findings,
+            topType,
+            risk: highestRisk,
+            blocked: block,
+            siteOrigin: siteHostname()
+        };
+
+        // Issue the verdict synchronously to release the intercepted
+        // request promptly — hashing, dedup, logging and banner all
+        // happen in the async tail below. The verdict applies whether
+        // or not this is a duplicate (we still block the network call
+        // if `block` is true), but the UI and incident log are skipped
+        // when the same hash was seen within the cooldown window.
+        postVerdict(id, !block);
+
+        try {
+            await attachHashesAndStripValues(incident.findings);
+            const hashes = incident.findings.map((f) => f.hash).filter(Boolean);
+            if (isDuplicateDetection(hashes)) return;
+            sendToBackground({ action: 'log_incident', incident }).catch(() => {});
+            showAlertBanner(incident);
+        } catch { /* never break the verdict path */ }
+    }
+
+    window.addEventListener('message', (event) => {
+        if (event.source !== window) return;
+        const data = event.data;
+        if (!data || data.source !== 'vaultbix-page' || data.kind !== 'request') return;
+        handlePageRequest(data);
+    });
+
+    // ====================================================================
+    // FORM SUBMISSION FALLBACK (catches synchronous form POSTs)
+    // ====================================================================
+    function extractFormData(form) {
+        try {
+            const fd = new FormData(form);
+            const parts = [];
+            for (const [k, v] of fd.entries()) {
+                parts.push(`${k}=${typeof v === 'string' ? v : '[file]'}`);
+            }
+            return parts.join('\n');
+        } catch { return ''; }
+    }
 
     async function handleFormSubmit(e) {
         try {
-            const form = e?.target;
+            const form = e.target;
             if (!form || form.tagName !== 'FORM') return;
-            const input = state.adapter?.getInput?.();
-            if (!input || !form.contains(input)) return;
-            const shouldBlock = await checkAndBlock(input, e);
-            if (shouldBlock) { e.preventDefault(); e.stopImmediatePropagation(); }
-        } catch { /* fail silently */ }
-    }
+            if (!settings.protectionEnabled || isSiteAllowed()) return;
 
-    async function handleButtonClick(e) {
-        try {
-            const button = e?.target?.closest('button');
-            if (!button) return;
-            const submitButton = state.adapter?.getSubmit?.();
-            if (!submitButton || button !== submitButton) return;
-            const input = state.adapter?.getInput?.();
-            if (!input) return;
-            const shouldBlock = await checkAndBlock(input, e);
-            if (shouldBlock) { e.preventDefault(); e.stopImmediatePropagation(); e.stopPropagation(); }
-        } catch { /* fail silently */ }
-    }
+            // A form submission is itself an explicit user action, so we
+            // count it as user input even if no key has been pressed in
+            // the last few seconds.
+            lastUserInputAt = Date.now();
 
-    async function handleKeyDown(e) {
-        try {
-            if (e?.key !== 'Enter' || e.shiftKey) return;
-            const input = state.adapter?.getInput?.();
-            if (!input) return;
-            const activeElement = document.activeElement;
-            if (activeElement !== input && !input.contains(activeElement)) return;
-            if (input.tagName === 'TEXTAREA' && !e.ctrlKey && !e.metaKey) return;
-            const shouldBlock = await checkAndBlock(input, e);
-            if (shouldBlock) { e.preventDefault(); e.stopImmediatePropagation(); }
-        } catch { /* fail silently */ }
-    }
+            const action = form.action || location.href;
+            const method = (form.method || 'GET').toUpperCase();
+            const body = extractFormData(form);
+            if (isWhitelistedHaystack(body, action)) return;
+            if (!quickCheck(body)) return;
 
-    async function handlePaste(e) {
-        try {
-            if (!CONFIG.ENABLE_PASTE_WARNINGS) return;
-            const features = await ensureFeatureState();
-            if (!features.warningsEnabled) return;
-
-            const text = e?.clipboardData?.getData('text') || '';
-            if (!text || !quickCheck(text)) return;
-
-            const { findings, overallRisk, summary } = await analyzeText(text);
-            if (findings.length > 0 && overallRisk !== 'LOW') {
-                showToast({
-                    title: 'Sensitive Data in Clipboard',
-                    message: summary.message,
-                    type: 'warning',
-                    duration: CONFIG.TOAST_DURATION_FREE
-                });
-                await logActivity('PASTE_WARNING', findings);
+            let { findings, topType } = detect(body);
+            findings = filterForMinimal(findings);
+            if (findings.length === 0) return;
+            if (findings.length > 0) {
+                const ordered = [...findings].sort((a, b) => (RISK_RANK[b.risk] || 0) - (RISK_RANK[a.risk] || 0));
+                topType = ordered[0].type;
             }
-        } catch { /* fail silently */ }
+
+            const highestRisk = highestRiskOf(findings) || 'LOW';
+            const block = shouldBlockForRisk(highestRisk);
+
+            // Cancel the form submit synchronously — must happen before
+            // any await or the form has already been allowed to propagate.
+            if (block) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+            }
+
+            const incident = {
+                id: 'inc_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                timestamp: Date.now(),
+                destination: destinationFromUrl(action),
+                destinationFull: fullDestination(action),
+                method,
+                findings,
+                topType,
+                risk: highestRisk,
+                blocked: block,
+                siteOrigin: siteHostname()
+            };
+
+            // Async tail: hash → dedup-check → log + banner if first time.
+            // Duplicates within the cooldown window are still blocked above
+            // but skip the banner and incident log.
+            await attachHashesAndStripValues(incident.findings);
+            const hashes = incident.findings.map((f) => f.hash).filter(Boolean);
+            if (isDuplicateDetection(hashes)) return;
+            sendToBackground({ action: 'log_incident', incident }).catch(() => {});
+            showAlertBanner(incident);
+        } catch { /* never break the host page */ }
     }
 
-    // ========================================================================
-    // MUTATION OBSERVER
-    // ========================================================================
+    // Capture-phase listener so we run before the form's own handlers
+    document.addEventListener('submit', handleFormSubmit, true);
 
-    function setupMutationObserver() {
-        try {
-            if (state.mutationObserver) state.mutationObserver.disconnect();
-
-            const debouncedCheck = debounce(() => {
-                try {
-                    const input = state.adapter?.getInput?.();
-                    if (input && !state.observedInputs.has(input)) {
-                        state.observedInputs.add(input);
-                    }
-                } catch { /* ignore */ }
-            }, CONFIG.MUTATION_DEBOUNCE);
-
-            state.mutationObserver = new MutationObserver((mutations) => {
-                try {
-                    const hasRelevant = mutations.some(m =>
-                        m.type === 'childList' && (m.addedNodes.length > 0 || m.removedNodes.length > 0)
-                    );
-                    if (hasRelevant) debouncedCheck();
-                } catch { /* ignore */ }
-            });
-
-            if (document.body) {
-                state.mutationObserver.observe(document.body, { childList: true, subtree: true });
-            }
-        } catch { /* fail silently */ }
+    // ====================================================================
+    // BACKGROUND BRIDGE
+    // ====================================================================
+    async function sendToBackground(message) {
+        try { return await chrome.runtime.sendMessage(message); }
+        catch { return null; }
     }
 
-    // ========================================================================
-    // INITIALIZATION
-    // ========================================================================
-
-    function selectAdapter() {
-        try {
-            const url = window.location.href;
-            for (const [key, adapter] of Object.entries(ADAPTERS)) {
-                if (key !== 'generic' && adapter.match.test(url)) return adapter;
+    // Listen for setting changes from popup so behavior updates live
+    try {
+        chrome.runtime.onMessage.addListener((message) => {
+            if (!message) return;
+            if (message.action === 'settings_updated') {
+                if (message.settings) settings = { ...settings, ...message.settings };
+                if (message.allowedSites) allowedSites = message.allowedSites || {};
             }
+        });
+    } catch { /* ignore */ }
+
+    // ====================================================================
+    // IN-PAGE ALERT BANNER
+    // ====================================================================
+    let activeBanner = null;
+    let bannerTimer = null;
+
+    function ensureBannerStyles() {
+        if (document.getElementById('vaultbix-banner-styles')) return;
+        const style = document.createElement('style');
+        style.id = 'vaultbix-banner-styles';
+        style.textContent = `
+        .vb-banner-host { position: fixed; top: 16px; left: 0; right: 0; z-index: 2147483647;
+            display: flex; justify-content: center; pointer-events: none;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif; }
+        .vb-banner { pointer-events: auto; min-width: 360px; max-width: 520px;
+            background: #13131a; color: #f4f4f7;
+            border: 1px solid #26262f; border-left: 4px solid #FF6B1A;
+            border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,0.55);
+            padding: 14px 16px; display: flex; gap: 12px; align-items: flex-start;
+            transform: translateY(-12px); opacity: 0;
+            transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+                        opacity 180ms cubic-bezier(0.16, 1, 0.3, 1); }
+        .vb-banner--blocked { border-left-color: #ef4444; }
+        .vb-banner--blocked .vb-banner__icon { color: #ef4444; }
+        .vb-banner--warn { border-left-color: #FF6B1A; }
+        .vb-banner--warn .vb-banner__icon { color: #FF6B1A; }
+        .vb-banner.vb-show { transform: translateY(0); opacity: 1; }
+        .vb-banner__icon { flex-shrink: 0; width: 24px; height: 24px; color: #FF6B1A; margin-top: 1px; }
+        .vb-banner__body { flex: 1; min-width: 0; }
+        .vb-banner__title { font-size: 14px; font-weight: 600; line-height: 1.35; color: #f4f4f7; }
+        .vb-banner__sub { font-size: 12px; color: #9696a8; margin-top: 4px; line-height: 1.4;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .vb-banner__actions { display: flex; gap: 8px; margin-top: 12px; }
+        .vb-btn { font: inherit; font-size: 12px; font-weight: 600; line-height: 1;
+            padding: 8px 12px; border-radius: 6px; cursor: pointer;
+            border: 1px solid transparent;
+            transition: background 150ms cubic-bezier(0.16, 1, 0.3, 1),
+                        border-color 150ms cubic-bezier(0.16, 1, 0.3, 1); }
+        .vb-btn--ghost { background: transparent; color: #f4f4f7; border-color: #34343f; }
+        .vb-btn--ghost:hover { background: #1f1f29; border-color: #3f3f4d; }
+        .vb-btn--primary { background: #FF6B1A; color: #0a0a0d; border-color: #FF6B1A; }
+        .vb-btn--primary:hover { background: #ff8a45; border-color: #ff8a45; }
+        .vb-banner__close { background: none; border: none; cursor: pointer; color: #61616f;
+            padding: 0 4px; font-size: 20px; line-height: 1; }
+        .vb-banner__close:hover { color: #f4f4f7; }
+        `;
+        try { (document.head || document.documentElement).appendChild(style); } catch { /* ignore */ }
+    }
+
+    function buildBannerNode(incident) {
+        const host = document.createElement('div');
+        host.className = 'vb-banner-host';
+
+        const banner = document.createElement('div');
+        banner.className = 'vb-banner' + (incident.blocked ? ' vb-banner--blocked' : ' vb-banner--warn');
+        banner.setAttribute('role', 'alert');
+
+        const findingNames = [...new Set(incident.findings.map((f) => f.type))];
+        const verb = incident.blocked ? 'blocked' : 'detected';
+        const headline = `VaultBix ${verb} a potential ${incident.topType || 'data'} leak to ${incident.destination}`;
+        const sub = `${incident.findings.length} item${incident.findings.length === 1 ? '' : 's'} detected — ${findingNames.join(', ')}`;
+
+        // Build via DOM, no innerHTML, to keep CSP-safe and avoid XSS
+        const iconNS = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(iconNS, 'svg');
+        svg.setAttribute('class', 'vb-banner__icon');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('fill', 'none');
+        svg.setAttribute('stroke', 'currentColor');
+        svg.setAttribute('stroke-width', '2');
+        svg.setAttribute('stroke-linecap', 'round');
+        svg.setAttribute('stroke-linejoin', 'round');
+        const path1 = document.createElementNS(iconNS, 'path');
+        path1.setAttribute('d', 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z');
+        const line1 = document.createElementNS(iconNS, 'line');
+        line1.setAttribute('x1', '12'); line1.setAttribute('y1', '8');
+        line1.setAttribute('x2', '12'); line1.setAttribute('y2', '13');
+        const line2 = document.createElementNS(iconNS, 'line');
+        line2.setAttribute('x1', '12'); line2.setAttribute('y1', '16');
+        line2.setAttribute('x2', '12.01'); line2.setAttribute('y2', '16');
+        svg.appendChild(path1); svg.appendChild(line1); svg.appendChild(line2);
+        banner.appendChild(svg);
+
+        const body = document.createElement('div');
+        body.className = 'vb-banner__body';
+        const title = document.createElement('div');
+        title.className = 'vb-banner__title';
+        title.textContent = headline;
+        const subEl = document.createElement('div');
+        subEl.className = 'vb-banner__sub';
+        subEl.textContent = sub;
+        body.appendChild(title); body.appendChild(subEl);
+
+        const actions = document.createElement('div');
+        actions.className = 'vb-banner__actions';
+
+        const allowBtn = document.createElement('button');
+        allowBtn.className = 'vb-btn vb-btn--ghost';
+        allowBtn.textContent = 'Allow once';
+        allowBtn.addEventListener('click', () => {
+            allowOnceUntil.set(siteHostname(), Date.now() + CONFIG.ALLOW_ONCE_TTL_MS);
+            sendToBackground({ action: 'mark_allowed_once', incidentId: incident.id }).catch(() => {});
+            dismissBanner();
+            // Show toast that allow-once was granted
+            showToast('Allow once granted — will expire in 30s', 'amber');
+        });
+
+        const detailsBtn = document.createElement('button');
+        detailsBtn.className = 'vb-btn vb-btn--primary';
+        detailsBtn.textContent = 'View details';
+        detailsBtn.addEventListener('click', () => {
+            sendToBackground({ action: 'open_dashboard' }).catch(() => {});
+            dismissBanner();
+        });
+
+        actions.appendChild(allowBtn);
+        actions.appendChild(detailsBtn);
+        body.appendChild(actions);
+
+        banner.appendChild(body);
+
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'vb-banner__close';
+        closeBtn.setAttribute('aria-label', 'Dismiss');
+        closeBtn.textContent = '×';
+        closeBtn.addEventListener('click', dismissBanner);
+        banner.appendChild(closeBtn);
+
+        host.appendChild(banner);
+        return { host, banner };
+    }
+
+    function dismissBanner() {
+        if (!activeBanner) return;
+        try {
+            activeBanner.banner.classList.remove('vb-show');
+            const node = activeBanner.host;
+            setTimeout(() => { try { node.remove(); } catch {} }, 200);
         } catch { /* ignore */ }
-        return ADAPTERS.generic;
+        activeBanner = null;
+        if (bannerTimer) { clearTimeout(bannerTimer); bannerTimer = null; }
     }
 
-    async function waitForInput() {
-        while (state.initRetryCount < CONFIG.ELEMENT_MAX_RETRIES) {
-            try {
-                const input = state.adapter?.getInput?.();
-                if (input) return input;
-            } catch { /* ignore */ }
-            state.initRetryCount++;
-            await sleep(CONFIG.ELEMENT_POLL_INTERVAL);
-        }
-        return null;
-    }
-
-    async function initialize() {
-        if (state.isInitialized) return;
+    function showAlertBanner(incident) {
         try {
-            state.adapter = selectAdapter();
-            await checkFeatures();
-            await loadCustomRules();
-
-            const input = await waitForInput();
-            if (input) state.observedInputs.add(input);
-
-            document.addEventListener('submit', handleFormSubmit, true);
-            document.addEventListener('click', handleButtonClick, true);
-            document.addEventListener('keydown', handleKeyDown, true);
-            document.addEventListener('paste', handlePaste, true);
-
-            setupMutationObserver();
-            injectStyles();
-
-            state.isInitialized = true;
-        } catch {
-            // fail silently - extension should never crash the host page
+            ensureBannerStyles();
+            if (activeBanner) dismissBanner();
+            const { host, banner } = buildBannerNode(incident);
+            (document.body || document.documentElement).appendChild(host);
+            requestAnimationFrame(() => banner.classList.add('vb-show'));
+            activeBanner = { host, banner };
+            if (bannerTimer) clearTimeout(bannerTimer);
+            bannerTimer = setTimeout(dismissBanner, CONFIG.BANNER_AUTO_DISMISS_MS);
+        } catch (e) {
+            console.warn('[VaultBix] banner error', e);
         }
     }
 
-    function handleNavigation() {
-        state.initRetryCount = 0;
-        state.observedInputs = new WeakSet();
-        state.adapter = selectAdapter();
-        waitForInput().then(input => {
-            if (input) state.observedInputs.add(input);
-        }).catch(() => {});
+    // ── lightweight toast for "allow once" feedback ─────────────────────
+    function showToast(text, kind) {
+        try {
+            ensureBannerStyles();
+            const t = document.createElement('div');
+            t.style.cssText = `
+                position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+                background: #1a1a24; color: #ffffff;
+                padding: 10px 16px; border-radius: 8px;
+                font: 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+                z-index: 2147483647; opacity: 0; transition: opacity 150ms ease-out;`;
+            if (kind === 'red') t.style.background = '#E24B4A';
+            else if (kind === 'amber') t.style.background = '#d97706';
+            else if (kind === 'violet') t.style.background = '#5B4FCF';
+            t.textContent = text;
+            document.body.appendChild(t);
+            requestAnimationFrame(() => { t.style.opacity = '1'; });
+            setTimeout(() => {
+                t.style.opacity = '0';
+                setTimeout(() => { try { t.remove(); } catch {} }, 200);
+            }, 3000);
+        } catch { /* ignore */ }
     }
 
-    // ========================================================================
-    // START
-    // ========================================================================
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initialize);
-    } else {
-        initialize();
-    }
-
-    try {
-        window.addEventListener('pageshow', (e) => {
-            if (e?.persisted) { state.isInitialized = false; initialize(); }
-        });
-    } catch { /* ignore */ }
-
-    try {
-        let lastUrl = location.href;
-        const urlObserver = new MutationObserver(() => {
-            try {
-                if (location.href !== lastUrl) { lastUrl = location.href; handleNavigation(); }
-            } catch { /* ignore */ }
-        });
-        if (document.body) {
-            urlObserver.observe(document.body, { childList: true, subtree: true });
-        }
-    } catch { /* ignore */ }
-
+    // ====================================================================
+    // BOOTSTRAP
+    // ====================================================================
+    (async function init() {
+        await loadSettings();
+        // Page-world interceptor and submit/message listeners are already attached.
+    })();
 })();

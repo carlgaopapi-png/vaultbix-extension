@@ -1,86 +1,119 @@
 {
     "manifest_version": 3,
-    "name": "VaultBix - AI Data Leak Guard",
-    "version": "4.0.0",
-    "description": "Detects API keys, passwords, and sensitive data before you share them with AI tools. 100% local scanning — nothing leaves your browser.",
-
+    "name": "VaultBix - Real-Time Data Leak Guard",
+    "version": "5.1.0",
+    "description": "Intercepts outgoing requests to detect and block API keys, secrets, credentials, and PII before they leave your browser. 100% local scanning.",
     "background": {
         "service_worker": "background.js"
     },
-
     "action": {
         "default_popup": "popup.html",
-        "default_title": "VaultBix - AI Data Leak Guard"
+        "default_title": "VaultBix - Data Leak Guard"
     },
-
     "permissions": [
         "storage",
-        "alarms"
+        "activeTab",
+        "scripting",
+        "tabs"
     ],
-
     "host_permissions": [
-        "https://chat.openai.com/*",
         "https://chatgpt.com/*",
+        "https://*.chatgpt.com/*",
+        "https://chat.openai.com/*",
         "https://claude.ai/*",
+        "https://*.claude.ai/*",
         "https://gemini.google.com/*",
+        "https://aistudio.google.com/*",
         "https://copilot.microsoft.com/*",
-        "https://www.bing.com/chat/*",
-        "https://www.bing.com/search*",
-        "https://github.com/*",
-        "https://poe.com/*",
-        "https://you.com/*",
+        "https://m365.cloud.microsoft/*",
+        "https://github.com/copilot/*",
+        "https://github.com/*/copilot/*",
         "https://www.perplexity.ai/*",
-        "https://perplexity.ai/*",
         "https://chat.deepseek.com/*",
-        "https://grok.x.ai/*",
+        "https://grok.com/*",
+        "https://x.com/i/grok/*",
+        "https://poe.com/*",
         "https://huggingface.co/chat/*",
         "https://chat.mistral.ai/*",
-        "https://labs.google/*"
+        "https://you.com/*"
     ],
-
     "content_scripts": [
         {
             "matches": [
-                "https://chat.openai.com/*",
                 "https://chatgpt.com/*",
+                "https://*.chatgpt.com/*",
+                "https://chat.openai.com/*",
                 "https://claude.ai/*",
+                "https://*.claude.ai/*",
                 "https://gemini.google.com/*",
+                "https://aistudio.google.com/*",
                 "https://copilot.microsoft.com/*",
-                "https://www.bing.com/chat/*",
-                "https://www.bing.com/search*",
-                "https://github.com/*",
-                "https://poe.com/*",
-                "https://you.com/*",
+                "https://m365.cloud.microsoft/*",
+                "https://github.com/copilot/*",
+                "https://github.com/*/copilot/*",
                 "https://www.perplexity.ai/*",
-                "https://perplexity.ai/*",
                 "https://chat.deepseek.com/*",
-                "https://grok.x.ai/*",
+                "https://grok.com/*",
+                "https://x.com/i/grok/*",
+                "https://poe.com/*",
                 "https://huggingface.co/chat/*",
                 "https://chat.mistral.ai/*",
-                "https://labs.google/*"
+                "https://you.com/*"
             ],
-            "js": ["content/main.js"],
-            "type": "module",
-            "run_at": "document_idle",
+            "js": [
+                "content/inject.js"
+            ],
+            "run_at": "document_start",
+            "all_frames": false,
+            "world": "MAIN"
+        },
+        {
+            "matches": [
+                "https://chatgpt.com/*",
+                "https://*.chatgpt.com/*",
+                "https://chat.openai.com/*",
+                "https://claude.ai/*",
+                "https://*.claude.ai/*",
+                "https://gemini.google.com/*",
+                "https://aistudio.google.com/*",
+                "https://copilot.microsoft.com/*",
+                "https://m365.cloud.microsoft/*",
+                "https://github.com/copilot/*",
+                "https://github.com/*/copilot/*",
+                "https://www.perplexity.ai/*",
+                "https://chat.deepseek.com/*",
+                "https://grok.com/*",
+                "https://x.com/i/grok/*",
+                "https://poe.com/*",
+                "https://huggingface.co/chat/*",
+                "https://chat.mistral.ai/*",
+                "https://you.com/*"
+            ],
+            "js": [
+                "content/main.js"
+            ],
+            "run_at": "document_start",
             "all_frames": false
         }
     ],
-
     "web_accessible_resources": [
         {
             "resources": [
+                "content/inject.js",
                 "dashboard.html",
                 "dashboard.js",
-                "style.css",
-                "content/detection/detector.js",
-                "content/detection/patterns.js",
-                "content/detection/ml-detector.js",
-                "content/detection/ml-worker.js"
+                "onboarding.html",
+                "onboarding.js",
+                "style.css"
             ],
-            "matches": ["<all_urls>"]
+            "matches": [
+                "<all_urls>"
+            ]
         }
     ],
-
+    "content_security_policy": {
+        "extension_pages": "script-src 'self'; object-src 'self'"
+    },
     "icons": {
         "16": "icons/icon16.png",
         "48": "icons/icon48.png",

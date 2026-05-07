@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to VaultBix</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            background: var(--vb-bg);
+            margin: 0;
+            font-family: var(--vb-font);
+            color: var(--vb-text);
+            min-height: 100vh;
+        }
+        .vb-onb {
+            max-width: 720px;
+            margin: 56px auto;
+            background: var(--vb-surface);
+            border: 1px solid var(--vb-border);
+            border-radius: 16px;
+            padding: 40px 44px 32px;
+            box-shadow: var(--vb-shadow);
+        }
+        .vb-onb__brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 28px;
+        }
+        .vb-onb__brand svg,
+        .vb-onb__brand img {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            box-shadow: 0 0 0 1px var(--vb-border), 0 4px 12px rgba(255, 107, 26, 0.22);
+            display: block;
+        }
+        .vb-onb__brand-name {
+            font-weight: 700;
+            font-size: 18px;
+            letter-spacing: -0.2px;
+            color: var(--vb-text);
+        }
+        .vb-onb h1 {
+            font-size: 26px;
+            font-weight: 700;
+            letter-spacing: -0.4px;
+            margin: 0 0 10px;
+            color: var(--vb-text);
+        }
+        .vb-onb__lede {
+            font-size: 15px;
+            line-height: 1.55;
+            color: var(--vb-text-mute);
+            margin: 0 0 28px;
+        }
+        .vb-onb__modes {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin: 0 0 24px;
+        }
+        .vb-mode {
+            display: flex;
+            align-items: flex-start;
+            gap: 14px;
+            padding: 16px 18px;
+            border: 1px solid var(--vb-border);
+            border-radius: 12px;
+            background: var(--vb-surface-2);
+            cursor: pointer;
+            transition: border-color 150ms var(--vb-ease),
+                        box-shadow 150ms var(--vb-ease),
+                        background 150ms var(--vb-ease);
+        }
+        .vb-mode:hover {
+            border-color: var(--vb-border-strong);
+            background: #232330;
+        }
+        .vb-mode.is-selected {
+            border-color: var(--vb-accent);
+            background: var(--vb-accent-soft);
+            box-shadow: 0 0 0 3px var(--vb-accent-ring);
+        }
+        .vb-mode__radio {
+            flex-shrink: 0;
+            width: 18px; height: 18px;
+            border-radius: 50%;
+            border: 2px solid var(--vb-border-strong);
+            margin-top: 2px;
+            position: relative;
+            background: var(--vb-bg);
+        }
+        .vb-mode.is-selected .vb-mode__radio {
+            border-color: var(--vb-accent);
+        }
+        .vb-mode.is-selected .vb-mode__radio::after {
+            content: '';
+            position: absolute;
+            inset: 3px;
+            border-radius: 50%;
+            background: var(--vb-accent);
+        }
+        .vb-mode__body { flex: 1; }
+        .vb-mode__title {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--vb-text);
+        }
+        .vb-mode__chip {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: var(--vb-accent-soft);
+            color: var(--vb-accent);
+        }
+        .vb-mode__desc {
+            font-size: 13px;
+            line-height: 1.5;
+            color: var(--vb-text-mute);
+        }
+        .vb-onb__footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-top: 8px;
+        }
+        .vb-onb__hint {
+            font-size: 12px;
+            color: var(--vb-text-faint);
+            line-height: 1.45;
+            max-width: 360px;
+        }
+        .vb-onb__cta {
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 600;
+            padding: 12px 22px;
+            background: var(--vb-accent);
+            color: #0a0a0d;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 150ms var(--vb-ease),
+                        transform 150ms var(--vb-ease);
+        }
+        .vb-onb__cta:hover {
+            background: var(--vb-accent-hover);
+        }
+        .vb-onb__cta:active {
+            transform: translateY(1px);
+        }
+        .vb-onb__cta[disabled] {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .vb-onb__done {
+            display: none;
+            text-align: center;
+            padding: 24px 0 12px;
+        }
+        .vb-onb__done svg {
+            width: 56px; height: 56px;
+            color: var(--vb-accent);
+            margin-bottom: 12px;
+        }
+        .vb-onb__done h2 {
+            font-size: 20px;
+            font-weight: 700;
+            margin: 0 0 6px;
+            color: var(--vb-text);
+        }
+        .vb-onb__done p {
+            font-size: 14px;
+            color: var(--vb-text-mute);
+            margin: 0;
+        }
+        .is-finished .vb-onb__modes,
+        .is-finished .vb-onb__footer { display: none; }
+        .is-finished .vb-onb__done { display: block; }
+    </style>
+</head>
+<body>
+    <main class="vb-onb" id="vbOnb">
+        <div class="vb-onb__brand">
+            <img src="icons/icon-vb.png"
+                 class="vb-brand__logo"
+                 alt="VaultBix"
+                 width="36"
+                 height="36">
+            <span class="vb-onb__brand-name">VaultBix</span>
+        </div>
+
+        <h1>Pick how strict you want VaultBix to be</h1>
+        <p class="vb-onb__lede">
+            VaultBix scans data you type into web pages for API keys, secrets and PII before they leave your browser.
+            Until you choose a mode, nothing is ever blocked &mdash; you'll just see warnings.
+        </p>
+
+        <div class="vb-onb__modes" role="radiogroup" aria-label="Sensitivity mode">
+            <label class="vb-mode" data-value="strict" role="radio" tabindex="0">
+                <span class="vb-mode__radio" aria-hidden="true"></span>
+                <span class="vb-mode__body">
+                    <span class="vb-mode__title">Strict <span class="vb-mode__chip">Blocks everything</span></span>
+                    <span class="vb-mode__desc">Block any request that contains a detected secret or PII item, no matter the severity. Most protective, highest false-positive risk.</span>
+                </span>
+            </label>
+
+            <label class="vb-mode is-selected" data-value="balanced" role="radio" tabindex="0" aria-checked="true">
+                <span class="vb-mode__radio" aria-hidden="true"></span>
+                <span class="vb-mode__body">
+                    <span class="vb-mode__title">Balanced <span class="vb-mode__chip">Recommended</span></span>
+                    <span class="vb-mode__desc">Always show a warning. Block only Critical leaks &mdash; AWS keys, SSNs, credit cards, private keys and live API tokens.</span>
+                </span>
+            </label>
+
+            <label class="vb-mode" data-value="minimal" role="radio" tabindex="0">
+                <span class="vb-mode__radio" aria-hidden="true"></span>
+                <span class="vb-mode__body">
+                    <span class="vb-mode__title">Minimal <span class="vb-mode__chip">Quietest</span></span>
+                    <span class="vb-mode__desc">Never block anything. Only show a warning when a Critical item is detected. Everything else is ignored.</span>
+                </span>
+            </label>
+        </div>
+
+        <div class="vb-onb__footer">
+            <p class="vb-onb__hint">
+                You can change this any time from the popup. Detection is 100% local &mdash; nothing about your activity ever leaves your browser.
+            </p>
+            <button class="vb-onb__cta" id="vbOnbCta" type="button">Finish setup</button>
+        </div>
+
+        <div class="vb-onb__done">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            <h2>You're all set</h2>
+            <p>VaultBix is now active. You can close this tab.</p>
+        </div>
+
+        <!-- Sign-in prompt -->
+        <div style="margin-top: 24px; padding: 20px; background: var(--vb-surface-2); border: 1px solid var(--vb-border); border-radius: 12px; text-align: center;">
+            <p style="font-size: 15px; font-weight: 600; color: var(--vb-text); margin: 0 0 6px;">Have an enterprise account?</p>
+            <p style="font-size: 13px; color: var(--vb-text-mute); margin: 0 0 16px;">Sign in to connect to your organization's dashboard for team management, compliance reports, and admin controls.</p>
+            <button onclick="window.open('https://vaultbix.com/login', '_blank')" style="font-family: inherit; font-size: 14px; font-weight: 600; padding: 11px 24px; background: #5B4FCF; color: #ffffff; border: none; border-radius: 8px; cursor: pointer; transition: background 150ms ease;">
+                Sign In to Dashboard
+            </button>
+        </div>
+    </main>
+
+    <script src="onboarding.js"></script>
+</body>
+</html>

@@ -13,29 +13,30 @@ VaultBix is a Chrome extension that detects API keys, passwords, and sensitive d
 
 ## How It Works
 
-VaultBix monitors text inputs on AI platforms (ChatGPT, Claude, Gemini, Copilot, etc.) and scans for sensitive data using local pattern matching. When a threat is detected:
+VaultBix monitors outgoing requests on AI platforms (ChatGPT, Claude, Gemini, Copilot, etc.) and scans for sensitive data using local pattern matching. When a threat is detected, VaultBix shows a banner with the secret type and either warns or blocks based on your sensitivity setting:
 
-- **Free**: Warning toast notification
-- **Pro**: Block submission, redact sensitive values, or send anyway
+- **Strict**: blocks anything detected
+- **Balanced** (default): blocks Critical findings, warns on the rest
+- **Minimal**: warns on Critical only, ignores everything else
 
-All detection runs locally in your browser. No data is ever sent to any server for scanning.
+Strict mode blocks any detected secret before it leaves your browser — the request is intercepted and never sent. All detection runs locally in your browser. No data is ever sent to any server for scanning.
 
 ## Supported Platforms
 
-| Platform | Status |
-|----------|--------|
-| ChatGPT (chatgpt.com) | Supported |
-| Claude (claude.ai) | Supported |
-| Gemini (gemini.google.com) | Supported |
-| GitHub Copilot Chat | Supported |
-| Microsoft Copilot | Supported |
-| Perplexity | Supported |
-| DeepSeek | Supported |
-| Grok | Supported |
-| Poe | Supported |
-| HuggingFace Chat | Supported |
-| Mistral Chat | Supported |
-| You.com | Supported |
+| Platform | URLs |
+|----------|------|
+| ChatGPT | chatgpt.com, chat.openai.com |
+| Claude | claude.ai |
+| Google Gemini & AI Studio | gemini.google.com, aistudio.google.com |
+| Microsoft Copilot | copilot.microsoft.com, m365.cloud.microsoft |
+| GitHub Copilot Chat | github.com/copilot, github.com/\*/copilot (Copilot pages only) |
+| Perplexity | www.perplexity.ai |
+| DeepSeek | chat.deepseek.com |
+| Grok | grok.com, x.com/i/grok |
+| Poe | poe.com |
+| HuggingFace Chat | huggingface.co/chat |
+| Mistral Chat | chat.mistral.ai |
+| You.com | you.com |
 
 ## Install from Source
 
@@ -53,19 +54,22 @@ All detection runs locally in your browser. No data is ever sent to any server f
 ```
 vb.ext/
   manifest.json          # Chrome extension manifest (MV3)
-  background.js          # Service worker — storage, messaging, license
+  background.js          # Service worker — storage, messaging, enterprise sync
   popup.html             # Extension popup UI
   popup.js               # Popup logic
   style.css              # Shared styles
   dashboard.html         # Full activity dashboard
   dashboard.js           # Dashboard logic
+  onboarding.html        # First-run onboarding UI
+  onboarding.js          # Onboarding logic
   shared/
-    config.js            # URLs and pricing config
+    config.js            # URLs and shared config
   content/
-    main.js              # Content script — input monitoring, UI
+    inject.js            # Page-world script — patches fetch/XHR/sendBeacon
+    main.js              # Content script — input monitoring, detection, UI
     detection/
       detector.js        # Unified detection engine
-      patterns.js        # Regex patterns for secrets
+      patterns.js        # Regex patterns for secrets (45 patterns)
       ml-detector.js     # Optional ML layer (graceful fallback)
       ml-worker.js       # Web Worker for ML inference
     ui/
@@ -78,25 +82,29 @@ vb.ext/
     icon16.png
     icon48.png
     icon128.png
+    icon-vb.png          # Source logo (128px)
 ```
 
 ## Privacy
 
 - **Zero network requests** for detection (all local regex matching)
-- **Logs stored locally** on your device only (event type, timestamp, site — never the actual secret values)
+- **Logs stored locally** on your device only (event type, timestamp, site, secret type prefix, length, and SHA-256 hash — never the actual secret values)
 - **No analytics, no telemetry, no tracking**
-- Only network request: Pro license validation (no prompt data sent)
+- Optional team sync (off by default): if you explicitly connect to an organization, hash + metadata is sent to your team's backend. Raw secret values never leave your device.
 
 You can verify this yourself — the source code is right here.
 
-## Pro Features
+## Coming Soon
 
-Free tier shows warnings. [VaultBix Pro](https://vaultbix.com) adds:
+We're building a Team tier for engineering organizations:
+- Team admin dashboard with org-wide incident visibility
+- SSO authentication (Google Workspace, Okta)
+- Centralized policy controls — admins set blocking rules across the team
+- Auto-redaction of detected secrets in-flight
+- Custom detection rules per organization
+- Audit logs and SIEM integration
 
-- Block submissions containing secrets
-- Auto-redact sensitive values
-- Unlimited custom detection rules
-- Full activity dashboard
+**Interested in being a design partner?** Email [founders@vaultbix.com](mailto:founders@vaultbix.com) — we're working with engineering teams of 10-50 right now.
 
 ## Contributing
 

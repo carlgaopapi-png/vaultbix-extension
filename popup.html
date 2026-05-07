@@ -5,1260 +5,138 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VaultBix</title>
     <link rel="stylesheet" href="style.css">
-    <style>
-    /* ======================================================================
-       VaultBix Popup — Premium Redesign
-       ====================================================================== */
-    .popup-wrapper {
-        width: 380px;
-        max-height: 580px;
-        overflow: hidden;
-        background: var(--bg-color);
-        font-family: var(--font-family);
-        color: var(--text-color);
-    }
-    .popup-view {
-        flex-direction: column;
-        min-height: 100%;
-    }
-
-    /* ---------- ANIMATED HEADER ---------- */
-    .popup-header {
-        position: relative;
-        padding: 20px 20px 16px;
-        overflow: hidden;
-        background: linear-gradient(135deg, rgba(0,229,191,0.08) 0%, rgba(14,165,233,0.05) 50%, rgba(0,229,191,0.03) 100%);
-        border-bottom: 1px solid var(--border-color);
-    }
-    .popup-header::before {
-        content: '';
-        position: absolute;
-        top: -50%;
-        left: -50%;
-        width: 200%;
-        height: 200%;
-        background: radial-gradient(circle at 30% 40%, rgba(0,229,191,0.06) 0%, transparent 50%),
-                    radial-gradient(circle at 70% 60%, rgba(14,165,233,0.04) 0%, transparent 50%);
-        animation: headerOrb 20s ease-in-out infinite;
-        pointer-events: none;
-    }
-    @keyframes headerOrb {
-        0%,100% { transform: translate(0,0) }
-        25% { transform: translate(10px,-10px) }
-        50% { transform: translate(-5px,5px) }
-        75% { transform: translate(5px,10px) }
-    }
-    .popup-header-content {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        position: relative;
-        z-index: 1;
-    }
-    .popup-title {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-    .popup-brand {
-        font-size: 18px;
-        font-weight: 800;
-        letter-spacing: -0.5px;
-        background: linear-gradient(135deg, var(--text-color) 0%, var(--text-secondary) 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-    }
-    .icon-shield { color: var(--primary-color); }
-    .popup-header-actions {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-    .theme-toggle-btn {
-        width: 32px;
-        height: 32px;
-        border-radius: 8px;
-        border: 1px solid var(--border-color);
-        background: var(--bg-secondary);
-        color: var(--text-secondary);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-    .theme-toggle-btn:hover {
-        background: var(--bg-hover);
-        border-color: var(--primary-color);
-        color: var(--primary-color);
-    }
-    [data-theme="dark"] .theme-icon-light { display: none; }
-    [data-theme="light"] .theme-icon-dark { display: none; }
-    .early-access-badge {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        padding: 5px 12px;
-        border-radius: 100px;
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.5px;
-        text-transform: uppercase;
-        background: var(--primary-light);
-        color: var(--primary-color);
-        border: 1px solid rgba(0,229,191,0.15);
-    }
-    .badge-dot {
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        background: var(--primary-color);
-        animation: dotPulse 2s ease-in-out infinite;
-        box-shadow: 0 0 6px var(--primary-color);
-    }
-    @keyframes dotPulse {
-        0%,100% { opacity: 1; transform: scale(1); }
-        50% { opacity: 0.5; transform: scale(1.3); }
-    }
-    .popup-subtitle {
-        font-size: 12px;
-        color: var(--text-secondary);
-        margin-top: 4px;
-        position: relative;
-        z-index: 1;
-    }
-
-    /* ---------- CONTENT ---------- */
-    .popup-content {
-        padding: 16px 20px;
-        overflow-y: auto;
-        max-height: 440px;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-    }
-    .popup-content::-webkit-scrollbar { width: 4px; }
-    .popup-content::-webkit-scrollbar-track { background: transparent; }
-    .popup-content::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
-
-    /* ---------- SECURITY SCORE ---------- */
-    .security-score-card {
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        padding: 16px;
-        border-radius: 14px;
-        background: linear-gradient(135deg, rgba(0,229,191,0.06) 0%, rgba(14,165,233,0.03) 100%);
-        border: 1px solid rgba(0,229,191,0.1);
-        position: relative;
-        overflow: hidden;
-    }
-    .security-score-card::after {
-        content: '';
-        position: absolute;
-        inset: 0;
-        border-radius: 14px;
-        padding: 1px;
-        background: linear-gradient(135deg, rgba(0,229,191,0.2), transparent 60%);
-        -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-        -webkit-mask-composite: xor;
-        mask-composite: exclude;
-        pointer-events: none;
-    }
-    .score-ring-wrap {
-        width: 64px;
-        height: 64px;
-        flex-shrink: 0;
-        position: relative;
-    }
-    .score-ring-bg { stroke: var(--border-color); }
-    .score-ring-fill {
-        stroke: var(--primary-color);
-        stroke-linecap: round;
-        filter: drop-shadow(0 0 4px rgba(0,229,191,0.4));
-        transition: stroke-dashoffset 1.5s cubic-bezier(0.16,1,0.3,1);
-    }
-    .score-value {
-        position: absolute;
-        inset: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 20px;
-        font-weight: 900;
-        letter-spacing: -1px;
-        color: var(--primary-color);
-    }
-    .score-info {
-        flex: 1;
-        min-width: 0;
-    }
-    .score-label {
-        font-size: 14px;
-        font-weight: 700;
-        margin-bottom: 2px;
-    }
-    .score-sublabel {
-        font-size: 11px;
-        color: var(--text-secondary);
-        line-height: 1.4;
-    }
-    .score-grade {
-        display: inline-block;
-        padding: 2px 8px;
-        border-radius: 6px;
-        font-size: 10px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin-top: 4px;
-    }
-    .score-grade.excellent { background: rgba(18,183,106,0.12); color: var(--success); }
-    .score-grade.good { background: rgba(14,165,233,0.12); color: var(--info); }
-    .score-grade.warning { background: var(--warning-light); color: var(--warning); }
-
-    /* ---------- STATUS CARD ---------- */
-    .status-card {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 12px 14px;
-        border-radius: 12px;
-        background: var(--bg-secondary);
-        border: 1px solid var(--border-color);
-        transition: all 0.3s;
-    }
-    .status-card-active {
-        background: linear-gradient(135deg, rgba(18,183,106,0.06), rgba(18,183,106,0.02));
-        border-color: rgba(18,183,106,0.15);
-    }
-    .status-card-icon {
-        width: 40px;
-        height: 40px;
-        border-radius: 10px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        position: relative;
-        flex-shrink: 0;
-    }
-    .status-card-active .status-card-icon {
-        background: rgba(18,183,106,0.1);
-        color: var(--success);
-    }
-    .status-card-icon .status-pulse {
-        position: absolute;
-        inset: -3px;
-        border-radius: 12px;
-        border: 2px solid var(--success);
-        opacity: 0;
-        animation: statusPulse 3s ease-out infinite;
-    }
-    @keyframes statusPulse {
-        0% { opacity: 0.4; transform: scale(0.95); }
-        100% { opacity: 0; transform: scale(1.15); }
-    }
-    .status-card-content { flex: 1; min-width: 0; }
-    .status-card-title { font-size: 13px; font-weight: 700; }
-    .status-card-subtitle { font-size: 11px; color: var(--text-secondary); margin-top: 1px; }
-
-    /* ---------- STATS ---------- */
-    .popup-stats {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-    }
-    .popup-stat-card {
-        padding: 14px;
-        border-radius: 12px;
-        background: var(--bg-secondary);
-        border: 1px solid var(--border-color);
-        text-align: center;
-        transition: all 0.3s;
-        cursor: default;
-        position: relative;
-        overflow: hidden;
-    }
-    .popup-stat-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 2px;
-        background: linear-gradient(90deg, var(--primary-color), var(--info));
-        opacity: 0;
-        transition: opacity 0.3s;
-    }
-    .popup-stat-card:hover::before { opacity: 1; }
-    .popup-stat-card:hover {
-        border-color: rgba(0,229,191,0.15);
-        transform: translateY(-1px);
-        box-shadow: 0 4px 16px rgba(0,0,0,0.2);
-    }
-    .popup-stat-value {
-        font-size: 28px;
-        font-weight: 900;
-        letter-spacing: -1px;
-        line-height: 1;
-        margin-bottom: 4px;
-        background: linear-gradient(135deg, var(--text-color), var(--text-secondary));
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-    }
-    .popup-stat-card-today .popup-stat-value {
-        background: linear-gradient(135deg, var(--primary-color), var(--info));
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-    }
-    .popup-stat-label {
-        font-size: 11px;
-        color: var(--text-tertiary);
-        font-weight: 500;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-
-    /* ---------- BANNERS ---------- */
-    .privacy-banner {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 10px 14px;
-        border-radius: 10px;
-        background: var(--bg-secondary);
-        border: 1px solid var(--border-color);
-        font-size: 12px;
-        color: var(--text-secondary);
-        transition: all 0.3s;
-    }
-    .privacy-banner:hover {
-        border-color: var(--border-hover);
-    }
-
-    /* ---------- LAST EVENT ---------- */
-    .last-blocked-card {
-        padding: 12px 14px;
-        border-radius: 10px;
-        background: var(--danger-light);
-        border: 1px solid rgba(240,68,56,0.12);
-        animation: slideUp 0.4s cubic-bezier(0.16,1,0.3,1);
-    }
-    @keyframes slideUp {
-        from { opacity: 0; transform: translateY(8px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-    .last-blocked-header {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 11px;
-        font-weight: 600;
-        color: var(--danger);
-        margin-bottom: 6px;
-    }
-    .last-blocked-time { margin-left: auto; color: var(--text-tertiary); font-weight: 400; }
-    .last-blocked-content { display: flex; align-items: center; gap: 8px; }
-    .last-blocked-type {
-        font-size: 12px;
-        font-weight: 600;
-        color: var(--text-color);
-    }
-    .last-blocked-detail {
-        font-size: 11px;
-        color: var(--text-secondary);
-        margin-left: auto;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    /* ---------- RISK ROW ---------- */
-    .popup-risk-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 10px 14px;
-        border-radius: 10px;
-        background: var(--bg-secondary);
-        border: 1px solid var(--border-color);
-    }
-    .popup-risk-label {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 12px;
-        color: var(--text-secondary);
-        font-weight: 500;
-    }
-    .popup-risk-pill {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        padding: 4px 10px;
-        border-radius: 100px;
-        background: var(--bg-tertiary);
-        font-size: 11px;
-        font-weight: 600;
-    }
-
-    /* ---------- ACTIVITY LOG ---------- */
-    .popup-section { }
-    .popup-section-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 8px;
-        font-size: 12px;
-        font-weight: 700;
-        color: var(--text-secondary);
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-    .popup-section-count {
-        padding: 2px 8px;
-        border-radius: 100px;
-        background: var(--bg-tertiary);
-        font-size: 10px;
-        font-weight: 600;
-        color: var(--text-tertiary);
-    }
-    .popup-logs-container {
-        max-height: 160px;
-        overflow-y: auto;
-        border-radius: 10px;
-        border: 1px solid var(--border-color);
-        background: var(--bg-secondary);
-    }
-    .popup-logs-container::-webkit-scrollbar { width: 3px; }
-    .popup-logs-container::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
-    .popup-log-list {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-    }
-    .popup-log-item {
-        padding: 10px 14px;
-        border-bottom: 1px solid var(--border-light);
-        transition: background 0.15s;
-    }
-    .popup-log-item:last-child { border-bottom: none; }
-    .popup-log-item:hover { background: var(--bg-hover); }
-    .popup-log-item-content { }
-    .popup-log-item-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 2px;
-    }
-    .popup-log-type-wrap {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-    }
-    .popup-log-type { font-size: 12px; font-weight: 600; }
-    .popup-log-time { font-size: 10px; color: var(--text-tertiary); }
-    .popup-log-details { font-size: 11px; color: var(--text-secondary); }
-    .popup-loading, .popup-empty {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        padding: 24px;
-        text-align: center;
-        font-size: 12px;
-        color: var(--text-tertiary);
-    }
-
-    /* ---------- ACTIONS ---------- */
-    .popup-actions {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
-    .popup-actions-row {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 8px;
-    }
-    .popup-btn-primary {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        padding: 12px 20px;
-        border-radius: 10px;
-        font-size: 13px;
-        font-weight: 700;
-        border: none;
-        cursor: pointer;
-        background: linear-gradient(135deg, var(--primary-color), #00c9a7);
-        color: #0d0f12;
-        box-shadow: 0 2px 12px rgba(0,229,191,0.2), inset 0 1px 0 rgba(255,255,255,0.15);
-        transition: all 0.3s cubic-bezier(0.16,1,0.3,1);
-        position: relative;
-        overflow: hidden;
-    }
-    .popup-btn-primary::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-        transform: translateX(-100%);
-        transition: transform 0.5s;
-    }
-    .popup-btn-primary:hover::before { transform: translateX(100%); }
-    .popup-btn-primary:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 6px 24px rgba(0,229,191,0.3), inset 0 1px 0 rgba(255,255,255,0.2);
-    }
-    .popup-btn-primary:active { transform: translateY(0); }
-    .popup-btn-secondary {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        padding: 10px 16px;
-        border-radius: 10px;
-        font-size: 12px;
-        font-weight: 600;
-        border: 1px solid var(--border-color);
-        background: var(--bg-secondary);
-        color: var(--text-secondary);
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-    .popup-btn-secondary:hover {
-        background: var(--bg-hover);
-        border-color: var(--border-hover);
-        color: var(--text-color);
-        transform: translateY(-1px);
-    }
-    .popup-btn-ghost {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        padding: 6px 10px;
-        border-radius: 8px;
-        font-size: 12px;
-        font-weight: 500;
-        border: none;
-        background: none;
-        color: var(--text-secondary);
-        cursor: pointer;
-        transition: all 0.15s;
-    }
-    .popup-btn-ghost:hover { color: var(--primary-color); background: var(--primary-light); }
-    .popup-btn-full { width: 100%; }
-    .popup-btn-half { }
-
-    /* ---------- FOOTER ---------- */
-    .popup-footer {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-        padding: 10px 20px;
-        border-top: 1px solid var(--border-color);
-        font-size: 11px;
-        color: var(--text-tertiary);
-        background: var(--bg-secondary);
-    }
-    .popup-footer-link {
-        color: var(--primary-color);
-        text-decoration: none;
-        transition: opacity 0.15s;
-    }
-    .popup-footer-link:hover { opacity: 0.8; }
-
-    /* ---------- SETTINGS SPECIFIC ---------- */
-    .login-gate-section-title {
-        font-size: 12px;
-        font-weight: 700;
-        color: var(--text-secondary);
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin-bottom: 8px;
-    }
-    .license-details {
-        border-radius: 10px;
-        border: 1px solid var(--border-color);
-        background: var(--bg-secondary);
-        overflow: hidden;
-    }
-    .license-detail-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 12px 14px;
-        border-bottom: 1px solid var(--border-light);
-        font-size: 13px;
-        transition: background 0.15s;
-    }
-    .license-detail-row:last-child { border-bottom: none; }
-    .license-detail-row:hover { background: var(--bg-hover); }
-    .license-detail-label { color: var(--text-secondary); font-weight: 500; }
-    .license-detail-value {
-        font-weight: 700;
-        font-size: 12px;
-        padding: 3px 10px;
-        border-radius: 100px;
-        background: var(--primary-light);
-        color: var(--primary-color);
-    }
-    .license-actions { }
-
-    /* ---------- PRIVACY VIEW ---------- */
-    .privacy-content { gap: 10px !important; }
-    .privacy-section-title { font-size: 16px; font-weight: 800; letter-spacing: -0.3px; }
-    .privacy-intro { font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 4px; }
-    .privacy-feature-card {
-        display: flex;
-        gap: 12px;
-        padding: 14px;
-        border-radius: 12px;
-        background: var(--bg-secondary);
-        border: 1px solid var(--border-color);
-        transition: all 0.3s;
-    }
-    .privacy-feature-card:hover {
-        border-color: var(--border-hover);
-        transform: translateY(-1px);
-        box-shadow: var(--shadow-sm);
-    }
-    .privacy-feature-card--highlight {
-        background: linear-gradient(135deg, rgba(0,229,191,0.06), rgba(0,229,191,0.02));
-        border-color: rgba(0,229,191,0.1);
-    }
-    .privacy-feature-card--danger {
-        background: linear-gradient(135deg, rgba(240,68,56,0.04), rgba(240,68,56,0.01));
-        border-color: rgba(240,68,56,0.08);
-    }
-    .privacy-feature-icon {
-        width: 36px;
-        height: 36px;
-        border-radius: 8px;
-        background: var(--bg-tertiary);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-        color: var(--primary-color);
-    }
-    .privacy-feature-card--danger .privacy-feature-icon { color: var(--danger); }
-    .privacy-feature-text h4 { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
-    .privacy-feature-text p { font-size: 12px; color: var(--text-secondary); line-height: 1.5; margin: 0; }
-    .privacy-never-list {
-        list-style: none;
-        padding: 0;
-        margin: 4px 0 0;
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-    }
-    .privacy-never-list li {
-        font-size: 12px;
-        color: var(--text-secondary);
-        display: flex;
-        align-items: center;
-        gap: 6px;
-    }
-    .privacy-never-list li::before {
-        content: '×';
-        font-weight: 700;
-        color: var(--danger);
-        font-size: 14px;
-    }
-
-    /* ---------- VIEW TRANSITIONS ---------- */
-    .view-enter {
-        animation: viewSlide 0.3s cubic-bezier(0.16,1,0.3,1);
-    }
-    @keyframes viewSlide {
-        from { opacity: 0; transform: translateX(12px); }
-        to { opacity: 1; transform: translateX(0); }
-    }
-
-    /* ---------- FEATURE GRID (new) ---------- */
-    .feature-pills {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-    }
-    .feature-pill {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        padding: 4px 10px;
-        border-radius: 100px;
-        font-size: 10px;
-        font-weight: 600;
-        background: var(--bg-tertiary);
-        color: var(--text-secondary);
-        border: 1px solid var(--border-light);
-    }
-    .feature-pill svg { width: 10px; height: 10px; }
-    .feature-pill.active { background: var(--primary-light); color: var(--primary-color); border-color: rgba(0,229,191,0.1); }
-
-    /* ---------- QUICK INSIGHTS ---------- */
-    .insight-row {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 8px 12px;
-        border-radius: 8px;
-        font-size: 11px;
-        color: var(--text-secondary);
-    }
-    .insight-icon {
-        width: 24px;
-        height: 24px;
-        border-radius: 6px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-        font-size: 12px;
-    }
-    .insight-value { margin-left: auto; font-weight: 700; color: var(--text-color); }
-
-    /* ---------- PROTECTED SITES MINI ---------- */
-    .sites-bar {
-        display: flex;
-        gap: 6px;
-        flex-wrap: wrap;
-    }
-    .site-chip {
-        padding: 3px 8px;
-        border-radius: 6px;
-        font-size: 10px;
-        font-weight: 600;
-        background: var(--bg-tertiary);
-        color: var(--text-tertiary);
-        border: 1px solid var(--border-light);
-    }
-    </style>
 </head>
 <body>
-    <div class="popup-wrapper">
+    <div class="vb-popup">
+
         <!-- ============================================================ -->
-        <!-- MAIN VIEW -->
+        <!-- Header                                                       -->
         <!-- ============================================================ -->
-        <div id="mainView" class="popup-view" style="display: flex;">
-            <div class="popup-header">
-                <div class="popup-header-content">
-                    <div class="popup-title">
-                        <svg class="icon-shield icon-shield-active" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                        </svg>
-                        <span class="popup-brand">VaultBix</span>
-                    </div>
-                    <div class="popup-header-actions">
-                        <button class="theme-toggle-btn" id="themeToggleBtn" title="Toggle theme">
-                            <svg class="theme-icon-dark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-                            </svg>
-                            <svg class="theme-icon-light" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="12" cy="12" r="5"/>
-                                <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
-                                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-                                <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
-                                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-                            </svg>
-                        </button>
-                        <div id="statusBadge" class="early-access-badge">
-                            <span class="badge-dot"></span>
-                            <span id="statusText">Loading...</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="popup-subtitle" id="mainViewSubtitle">AI Data Leak Guard</div>
+        <header class="vb-header">
+            <div class="vb-brand">
+                <img src="icons/icon-vb.png"
+                     class="vb-brand__logo"
+                     alt="VaultBix"
+                     width="32"
+                     height="32"
+                     style="border-radius: 7px; display: block;">
+                <span class="vb-brand__name">VaultBix</span>
             </div>
-
-            <div class="popup-content">
-                <!-- First-Run Welcome -->
-                <div id="welcomeBanner" class="privacy-banner" style="display: none; flex-direction: column; align-items: flex-start; gap: 6px;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--primary-color)" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                        <strong>Welcome to VaultBix!</strong>
-                    </div>
-                    <span style="font-size: 12px;">VaultBix scans your text locally for API keys, passwords, and sensitive data before you share it with AI tools. Nothing ever leaves your browser.</span>
-                    <button class="popup-btn-ghost" id="dismissWelcome" style="font-size: 11px; padding: 4px 8px; margin-top: 2px;">Got it</button>
-                </div>
-
-                <!-- Security Score -->
-                <div class="security-score-card" id="securityScoreCard">
-                    <div class="score-ring-wrap">
-                        <svg width="64" height="64" viewBox="0 0 64 64">
-                            <circle class="score-ring-bg" cx="32" cy="32" r="26" fill="none" stroke-width="5"/>
-                            <circle class="score-ring-fill" id="scoreRing" cx="32" cy="32" r="26" fill="none" stroke-width="5"
-                                stroke-dasharray="163.36" stroke-dashoffset="163.36"
-                                transform="rotate(-90 32 32)"/>
-                        </svg>
-                        <div class="score-value" id="scoreValue">--</div>
-                    </div>
-                    <div class="score-info">
-                        <div class="score-label">AI Security Score</div>
-                        <div class="score-sublabel" id="scoreDescription">Analyzing your protection level...</div>
-                        <div class="score-grade excellent" id="scoreGrade" style="display:none">Excellent</div>
-                    </div>
-                </div>
-
-                <!-- Protection Status Card -->
-                <div id="protectionStatusCard" class="status-card status-card-active">
-                    <div class="status-card-icon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                            <path d="M9 12l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                        <span class="status-pulse"></span>
-                    </div>
-                    <div class="status-card-content">
-                        <div class="status-card-title" id="protectionStatusTitle">Monitoring Active</div>
-                        <div class="status-card-subtitle" id="protectionStatusSubtitle">Scanning for sensitive data</div>
-                    </div>
-                </div>
-
-                <!-- Upgrade Banner -->
-                <div id="upgradeBanner" class="privacy-banner" style="display: none; cursor: pointer; border-color: var(--primary-color);">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--primary-color)" stroke-width="2">
-                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-                    </svg>
-                    <span style="color: var(--primary-color); font-weight: 600;">Upgrade to Pro</span>
-                    <span style="margin-left: auto; color: var(--text-secondary); font-size: 12px;">$5/mo</span>
-                </div>
-
-                <!-- Stats Cards -->
-                <div class="popup-stats">
-                    <div class="popup-stat-card">
-                        <div class="popup-stat-value" id="detectionCount">0</div>
-                        <div class="popup-stat-label">Total Events</div>
-                    </div>
-                    <div class="popup-stat-card popup-stat-card-today">
-                        <div class="popup-stat-value" id="todayCount">0</div>
-                        <div class="popup-stat-label">Today</div>
-                    </div>
-                </div>
-
-                <!-- What's Protected -->
-                <div class="feature-pills">
-                    <span class="feature-pill active">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-                        API Keys
-                    </span>
-                    <span class="feature-pill active">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                        Passwords
-                    </span>
-                    <span class="feature-pill active">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                        PII
-                    </span>
-                    <span class="feature-pill active">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><path d="M1 10h22"/></svg>
-                        Credit Cards
-                    </span>
-                    <span class="feature-pill active">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
-                        Tokens
-                    </span>
-                </div>
-
-                <!-- Last Event Card -->
-                <div class="last-blocked-card" id="lastBlockedCard" style="display: none;">
-                    <div class="last-blocked-header">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>
-                        </svg>
-                        <span>Latest Event</span>
-                        <span class="last-blocked-time" id="lastBlockedTime"></span>
-                    </div>
-                    <div class="last-blocked-content">
-                        <span class="last-blocked-type" id="lastBlockedType"></span>
-                        <span class="last-blocked-detail" id="lastBlockedDetail"></span>
-                    </div>
-                </div>
-
-                <!-- Site Risk Indicator -->
-                <div class="popup-risk-row">
-                    <div class="popup-risk-label">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
-                        </svg>
-                        Current Site Risk
-                    </div>
-                    <div class="popup-risk-pill" id="siteRiskPill">
-                        <span class="popup-risk-level" id="siteRiskLevel">Scanning...</span>
-                        <span class="popup-risk-score" id="siteRiskScore"></span>
-                    </div>
-                </div>
-
-                <!-- Recent Activity Section -->
-                <div class="popup-section">
-                    <div class="popup-section-header">
-                        <span>Recent Events</span>
-                        <span class="popup-section-count" id="logCount">0</span>
-                    </div>
-                    <div class="popup-logs-container">
-                        <ul class="popup-log-list" id="recentLogs">
-                            <li class="popup-loading">Loading events...</li>
-                        </ul>
-                    </div>
-                </div>
-
-                <!-- Action Buttons -->
-                <div class="popup-actions">
-                    <button class="popup-btn-primary" id="openDashboard">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="3" y="3" width="18" height="18" rx="2"/>
-                            <line x1="9" y1="3" x2="9" y2="21"/><line x1="3" y1="9" x2="21" y2="9"/>
-                        </svg>
-                        View Full Dashboard
-                    </button>
-                    <div class="popup-actions-row">
-                        <button class="popup-btn-secondary popup-btn-half" id="viewSettingsBtn">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="12" cy="12" r="3"/>
-                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-                            </svg>
-                            Settings
-                        </button>
-                        <button class="popup-btn-secondary popup-btn-half" id="viewPrivacyBtn">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-                            </svg>
-                            Privacy
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Privacy Trust Banner -->
-                <div class="privacy-banner" style="gap:8px">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2">
-                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
-                    </svg>
-                    <span style="font-size:11px">100% local scanning. Nothing ever leaves your browser.</span>
-                </div>
-            </div>
-
-            <div class="popup-footer">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+            <div class="vb-shield" id="vbShield" data-state="active" title="Protection active">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"
+                          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M9 12l2 2 4-4"
+                          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-                <span>Logs stored locally &bull; <a href="#" id="supportLink" class="popup-footer-link">Need help?</a></span>
             </div>
-        </div>
+        </header>
+
+        <!-- One-line status -->
+        <div class="vb-status" id="vbStatus">Protected — 0 leaks today</div>
 
         <!-- ============================================================ -->
-        <!-- SETTINGS VIEW -->
+        <!-- Stats                                                         -->
         <!-- ============================================================ -->
-        <div id="settingsView" class="popup-view" style="display: none;">
-            <div class="popup-header">
-                <div class="popup-header-content">
-                    <div class="popup-title">
-                        <svg class="icon-shield" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                        </svg>
-                        <span class="popup-brand">VaultBix</span>
-                    </div>
-                </div>
-                <div class="popup-subtitle">Settings</div>
+        <section class="vb-stats">
+            <div class="vb-stat vb-stat--today">
+                <div class="vb-stat__label">Today</div>
+                <div class="vb-stat__value" id="vbBlockedToday">0</div>
             </div>
-
-            <div class="popup-content">
-                <div class="license-status-container">
-                    <!-- License / Tier Card -->
-                    <div id="tierStatusCard" class="status-card status-card-active" style="margin-bottom: 16px;">
-                        <div class="status-card-icon">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                            </svg>
-                        </div>
-                        <div class="status-card-content">
-                            <div class="status-card-title" id="tierStatusTitle">Free Plan</div>
-                            <div class="status-card-subtitle" id="tierStatusSubtitle">Warnings only</div>
-                        </div>
-                    </div>
-
-                    <!-- License Key Input (free users) -->
-                    <div id="licenseSection" style="margin-bottom: 16px;">
-                        <h3 class="login-gate-section-title">Activate Pro License</h3>
-                        <div style="display: flex; gap: 8px; margin-top: 8px;">
-                            <input type="text" id="licenseKeyInput" placeholder="VBX-XXXXX-XXXXX-XXXXX-XXXXX" style="flex: 1; padding: 10px 12px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-color); font-size: 12px; font-family: var(--font-mono); outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='var(--primary-color)'" onblur="this.style.borderColor='var(--border-color)'" />
-                            <button class="popup-btn-primary" id="activateLicenseBtn" style="padding: 10px 16px; font-size: 12px; white-space: nowrap;">Activate</button>
-                        </div>
-                        <p id="licenseError" style="color: var(--danger); font-size: 11px; margin-top: 6px; display: none;"></p>
-                        <p id="licenseSuccess" style="color: var(--success); font-size: 11px; margin-top: 6px; display: none;"></p>
-                        <div style="margin-top: 10px;">
-                            <button class="popup-btn-ghost" id="buyProBtn" style="font-size: 12px; color: var(--primary-color);">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                                Get a license key
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Pro Status (pro users) -->
-                    <div id="proStatusSection" style="display: none; margin-bottom: 16px;">
-                        <div class="privacy-banner" style="border-color: rgba(18,183,106,0.2); background: rgba(18,183,106,0.04);">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2">
-                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
-                            </svg>
-                            <div>
-                                <span style="color: var(--success); font-weight: 700;">Pro Active</span>
-                                <span id="proEmail" style="color: var(--text-secondary); font-size: 11px; display: block;"></span>
-                            </div>
-                        </div>
-                        <button class="popup-btn-ghost" id="deactivateLicenseBtn" style="font-size: 11px; margin-top: 8px; color: var(--text-tertiary);">Deactivate License</button>
-                    </div>
-
-                    <!-- Detection Settings -->
-                    <h3 class="login-gate-section-title" style="margin-top: 8px;">Detection Settings</h3>
-                    <div class="license-details" style="display: block;">
-                        <div class="license-detail-row" style="cursor: pointer;" id="toggleWarnings">
-                            <span class="license-detail-label">Show Warnings</span>
-                            <span class="license-detail-value" id="warningsStatus">On</span>
-                        </div>
-                        <div class="license-detail-row" style="cursor: pointer;" id="toggleBlocking">
-                            <span class="license-detail-label">Block Submissions</span>
-                            <span class="license-detail-value" id="blockingStatus">On</span>
-                        </div>
-                        <div class="license-detail-row" style="cursor: pointer;" id="toggleRedaction">
-                            <span class="license-detail-label">Allow Redaction</span>
-                            <span class="license-detail-value" id="redactionStatus">On</span>
-                        </div>
-                    </div>
-                    <p id="settingsNote" class="login-gate-subtitle" style="font-size: 11px; margin-top: 8px; opacity: 0.7; color: var(--text-tertiary);"></p>
-
-                    <!-- Custom Rules Button -->
-                    <div style="margin-top: 16px;">
-                        <button class="popup-btn-secondary popup-btn-full" id="viewCustomRulesBtn">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
-                            </svg>
-                            Custom Rules
-                            <span id="customRulesCount" style="margin-left: auto; background: var(--bg-tertiary); padding: 2px 8px; border-radius: 10px; font-size: 11px;">0</span>
-                        </button>
-                    </div>
-
-                    <!-- Clear Data -->
-                    <div class="license-actions" style="margin-top: 16px;">
-                        <button class="popup-btn-secondary popup-btn-full" id="clearDataBtn" style="color: var(--danger); border-color: rgba(240,68,56,0.15);">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <polyline points="3 6 5 6 21 6"/>
-                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                            </svg>
-                            Clear All Local Data
-                        </button>
-                    </div>
-                </div>
+            <div class="vb-stat vb-stat--total">
+                <div class="vb-stat__label">All time</div>
+                <div class="vb-stat__value" id="vbBlockedTotal">0</div>
             </div>
-            <div class="popup-footer">
-                <button class="popup-btn-ghost" id="backToMainFromSettings">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-                    Back
+            <div class="vb-stat vb-stat--sites">
+                <div class="vb-stat__label">Sites</div>
+                <div class="vb-stat__value" id="vbSitesMonitored">0</div>
+            </div>
+        </section>
+
+        <!-- ============================================================ -->
+        <!-- Protection toggle                                             -->
+        <!-- ============================================================ -->
+        <section class="vb-toggle-card">
+            <div class="vb-toggle-row">
+                <div class="vb-toggle-info">
+                    <div class="vb-toggle-title">Protection</div>
+                    <div class="vb-toggle-domain" id="vbDomain">Protecting: —</div>
+                </div>
+                <button class="vb-pill" id="vbProtectionToggle" type="button" role="switch" aria-checked="true">
+                    <span class="vb-pill__knob"></span>
+                    <span class="vb-pill__label-on">ON</span>
+                    <span class="vb-pill__label-off">OFF</span>
                 </button>
             </div>
-        </div>
+        </section>
 
         <!-- ============================================================ -->
-        <!-- CUSTOM RULES VIEW -->
+        <!-- Recent incidents                                              -->
         <!-- ============================================================ -->
-        <div id="customRulesView" class="popup-view" style="display: none;">
-            <div class="popup-header">
-                <div class="popup-header-content">
-                    <div class="popup-title">
-                        <svg class="icon-shield" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                        </svg>
-                        <span class="popup-brand">VaultBix</span>
-                    </div>
-                </div>
-                <div class="popup-subtitle">Custom Detection Rules</div>
+        <section class="vb-section">
+            <div class="vb-section__header">
+                <h2 class="vb-section__title">Recent incidents</h2>
+                <button class="vb-link" id="vbClearHistory" type="button">Clear</button>
             </div>
-
-            <div class="popup-content">
-                <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">
-                    Define custom patterns to detect company-specific sensitive data.
-                </p>
-
-                <!-- Add Rule Form -->
-                <div style="background: var(--bg-secondary); border-radius: 12px; padding: 16px; margin-bottom: 12px; border: 1px solid var(--border-color);">
-                    <div style="margin-bottom: 10px;">
-                        <input type="text" id="newRuleName" placeholder="Rule name (e.g., Internal Project ID)" style="width: 100%; padding: 10px 12px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-color); font-size: 12px; outline: none; box-sizing: border-box; transition: border-color 0.2s;" onfocus="this.style.borderColor='var(--primary-color)'" onblur="this.style.borderColor='var(--border-color)'" />
-                    </div>
-                    <div style="margin-bottom: 10px;">
-                        <input type="text" id="newRulePattern" placeholder="Regex pattern (e.g., ACME-\d{4,})" style="width: 100%; padding: 10px 12px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-color); font-size: 12px; font-family: var(--font-mono); outline: none; box-sizing: border-box; transition: border-color 0.2s;" onfocus="this.style.borderColor='var(--primary-color)'" onblur="this.style.borderColor='var(--border-color)'" />
-                    </div>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <select id="newRuleRisk" style="padding: 10px 12px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-color); font-size: 12px; outline: none; transition: border-color 0.2s;">
-                            <option value="HIGH">High Risk</option>
-                            <option value="MEDIUM">Medium Risk</option>
-                            <option value="LOW">Low Risk</option>
-                        </select>
-                        <button class="popup-btn-primary" id="addRuleBtn" style="padding: 10px 16px; font-size: 12px; margin-left: auto;">Add Rule</button>
-                    </div>
-                    <p id="ruleError" style="color: var(--danger); font-size: 11px; margin-top: 6px; display: none;"></p>
-                </div>
-
-                <p id="rulesLimitNotice" style="font-size: 11px; color: var(--text-tertiary); margin-bottom: 12px; display: none;"></p>
-
-                <div id="customRulesList" style="display: flex; flex-direction: column; gap: 6px;">
-                    <div style="text-align: center; padding: 24px; color: var(--text-tertiary); font-size: 13px;">
-                        No custom rules yet.
-                    </div>
-                </div>
-            </div>
-            <div class="popup-footer">
-                <button class="popup-btn-ghost" id="backToSettingsFromRules">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-                    Back
-                </button>
-            </div>
-        </div>
+            <ul class="vb-incidents" id="vbIncidents">
+                <!-- populated by JS, falls back to empty state -->
+            </ul>
+        </section>
 
         <!-- ============================================================ -->
-        <!-- PRIVACY VIEW -->
+        <!-- Enterprise connection status                                  -->
         <!-- ============================================================ -->
-        <div id="privacyView" class="popup-view" style="display: none;">
-            <div class="popup-header">
-                <div class="popup-header-content">
-                    <div class="popup-title">
-                        <svg class="icon-shield" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                        </svg>
-                        <span class="popup-brand">VaultBix</span>
-                    </div>
+        <section class="vb-enterprise" id="vbEnterprise" style="display:none;">
+            <div class="vb-enterprise__row">
+                <div class="vb-enterprise__info">
+                    <div class="vb-enterprise__label">Organization</div>
+                    <div class="vb-enterprise__org" id="vbOrgName">—</div>
                 </div>
-                <div class="popup-subtitle">Privacy &amp; Data Handling</div>
+                <span class="vb-enterprise__badge" id="vbEntBadge">Connected</span>
             </div>
+        </section>
 
-            <div class="popup-content privacy-content">
-                <h3 class="privacy-section-title">Your Data, Your Control</h3>
-                <p class="privacy-intro">VaultBix is privacy-first. All detection happens locally in your browser.</p>
+        <!-- ============================================================ -->
+        <!-- Dashboard + Connect buttons                                   -->
+        <!-- ============================================================ -->
+        <section class="vb-actions">
+            <button class="vb-action-btn vb-action-btn--dashboard" id="vbOpenDashboard" type="button">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="7" height="7"/>
+                    <rect x="14" y="3" width="7" height="7"/>
+                    <rect x="14" y="14" width="7" height="7"/>
+                    <rect x="3" y="14" width="7" height="7"/>
+                </svg>
+                Dashboard
+            </button>
+            <button class="vb-action-btn vb-action-btn--connect" id="vbConnectBtn" type="button">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                </svg>
+                <span id="vbConnectLabel">Connect to Org</span>
+            </button>
+        </section>
 
-                <div class="privacy-feature-card privacy-feature-card--highlight">
-                    <div class="privacy-feature-icon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                            <path d="M9 12l2 2 4-4"/>
-                        </svg>
-                    </div>
-                    <div class="privacy-feature-text">
-                        <h4>100% Local Scanning</h4>
-                        <p>Pattern matching runs entirely in your browser using JavaScript. No cloud AI, no server processing.</p>
-                    </div>
-                </div>
-
-                <div class="privacy-feature-card">
-                    <div class="privacy-feature-icon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                        </svg>
-                    </div>
-                    <div class="privacy-feature-text">
-                        <h4>What We Store (Locally Only)</h4>
-                        <p>Event type, timestamp, site domain, and category. <strong>Never the actual secret values.</strong></p>
-                    </div>
-                </div>
-
-                <div class="privacy-feature-card privacy-feature-card--danger">
-                    <div class="privacy-feature-icon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
-                        </svg>
-                    </div>
-                    <div class="privacy-feature-text">
-                        <h4>What We NEVER Collect</h4>
-                        <ul class="privacy-never-list">
-                            <li>Your prompts or messages</li>
-                            <li>Actual secret values (API keys, passwords)</li>
-                            <li>Browsing history</li>
-                            <li>Analytics or telemetry</li>
-                        </ul>
-                    </div>
-                </div>
-
-                <div class="privacy-feature-card">
-                    <div class="privacy-feature-icon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
-                        </svg>
-                    </div>
-                    <div class="privacy-feature-text">
-                        <h4>Network Requests</h4>
-                        <p>The only network request VaultBix makes is license key validation (Pro users). No prompt content is ever sent.</p>
-                    </div>
-                </div>
+        <!-- ============================================================ -->
+        <!-- Sensitivity selector                                          -->
+        <!-- ============================================================ -->
+        <section class="vb-sensitivity">
+            <div class="vb-sensitivity__label">Sensitivity</div>
+            <div class="vb-segmented" role="tablist" id="vbSensitivity">
+                <button class="vb-segmented__btn" data-value="strict"  type="button" role="tab">Strict</button>
+                <button class="vb-segmented__btn" data-value="balanced" type="button" role="tab">Balanced</button>
+                <button class="vb-segmented__btn" data-value="minimal"  type="button" role="tab">Minimal</button>
             </div>
-            <div class="popup-footer">
-                <button class="popup-btn-ghost" id="backToMainViewFromPrivacy">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-                    Back
-                </button>
-            </div>
-        </div>
+        </section>
+
+        <!-- ============================================================ -->
+        <!-- Toast slot                                                    -->
+        <!-- ============================================================ -->
+        <div class="vb-toast-slot" id="vbToastSlot" aria-live="polite"></div>
+
     </div>
-    <script src="shared/config.js"></script>
+
     <script src="popup.js"></script>
-    <script>
-    // Security Score computation (runs after popup.js loads data)
-    function updateSecurityScore() {
-        try {
-            const totalEl = document.getElementById('detectionCount');
-            const todayEl = document.getElementById('todayCount');
-            const total = parseInt(totalEl?.textContent || '0', 10);
-            const today = parseInt(todayEl?.textContent || '0', 10);
-
-            // Score: higher is better. Starts at 100, decreases with unresolved threats
-            let score = 100;
-            if (today > 0) score -= Math.min(today * 5, 30);
-            if (total > 50) score -= 10;
-            else if (total > 20) score -= 5;
-            // Having the extension active is good
-            score = Math.max(score, 40);
-
-            const ring = document.getElementById('scoreRing');
-            const valueEl = document.getElementById('scoreValue');
-            const descEl = document.getElementById('scoreDescription');
-            const gradeEl = document.getElementById('scoreGrade');
-
-            if (ring) {
-                const circumference = 163.36;
-                const offset = circumference - (score / 100) * circumference;
-                ring.style.strokeDashoffset = offset;
-            }
-            if (valueEl) valueEl.textContent = score;
-            if (gradeEl) {
-                gradeEl.style.display = 'inline-block';
-                if (score >= 80) {
-                    gradeEl.textContent = 'Excellent';
-                    gradeEl.className = 'score-grade excellent';
-                    if (descEl) descEl.textContent = 'Your AI usage is well protected';
-                } else if (score >= 60) {
-                    gradeEl.textContent = 'Good';
-                    gradeEl.className = 'score-grade good';
-                    if (descEl) descEl.textContent = 'Some threats detected today';
-                } else {
-                    gradeEl.textContent = 'Needs Attention';
-                    gradeEl.className = 'score-grade warning';
-                    if (descEl) descEl.textContent = 'Multiple threats detected recently';
-                }
-            }
-        } catch(e) { /* silent */ }
-    }
-
-    // Observe stat changes to update score
-    const scoreObserver = new MutationObserver(updateSecurityScore);
-    const countEl = document.getElementById('detectionCount');
-    const todayEl2 = document.getElementById('todayCount');
-    if (countEl) scoreObserver.observe(countEl, { childList: true, characterData: true, subtree: true });
-    if (todayEl2) scoreObserver.observe(todayEl2, { childList: true, characterData: true, subtree: true });
-    // Initial update after a short delay
-    setTimeout(updateSecurityScore, 500);
-    setTimeout(updateSecurityScore, 2000);
-    </script>
 </body>
 </html>
