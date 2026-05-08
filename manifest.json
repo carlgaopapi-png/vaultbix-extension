@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
     "name": "VaultBix - Real-Time Data Leak Guard",
-    "version": "5.1.0",
-    "description": "Intercepts outgoing requests to detect and block API keys, secrets, credentials, and PII before they leave your browser. 100% local scanning.",
+    "version": "5.1.1",
+    "description": "Detects and blocks API keys, secrets, credentials, and PII before they leave your browser. 100% local — nothing sent to any server.",
     "background": {
         "service_worker": "background.js"
     },
@@ -12,8 +12,6 @@
     },
     "permissions": [
         "storage",
-        "activeTab",
-        "scripting",
         "tabs"
     ],
     "host_permissions": [
