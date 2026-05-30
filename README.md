@@ -1,3 +1,7 @@
+> ⚠️ VaultBix is no longer actively maintained.
+> The project is open source — feel free to fork it and build on it.
+> Built by Carl and Max, 2025–2026.
+
 # VaultBix — AI Data Leak Guard
 
 VaultBix is a Chrome extension that detects API keys, passwords, and sensitive data before you share them with AI tools. **100% local scanning — nothing leaves your browser.**
