@@ -46,4 +46,14 @@
         } catch { /* ignore */ }
         root.classList.add('is-finished');
     });
+
+    // Optional enterprise sign-in. Wired here (not as an inline onclick) so it
+    // satisfies the extension-pages CSP (script-src 'self'); an inline handler
+    // is silently blocked and the button would do nothing.
+    const signIn = document.getElementById('vbSignIn');
+    if (signIn) {
+        signIn.addEventListener('click', () => {
+            window.open('https://vaultbix.com/login', '_blank', 'noopener');
+        });
+    }
 })();

@@ -55,6 +55,7 @@
         { id: 'github_pat',  name: 'GitHub PAT',         type: 'API Key', pattern: /ghp_[A-Za-z0-9]{36}/g, risk: 'CRITICAL' },
         { id: 'github_oauth',name: 'GitHub OAuth',       type: 'API Key', pattern: /gho_[A-Za-z0-9]{36}/g, risk: 'CRITICAL' },
         { id: 'github_app',  name: 'GitHub App Token',   type: 'API Key', pattern: /(ghu|ghs|ghr)_[A-Za-z0-9]{36}/g, risk: 'HIGH' },
+        { id: 'github_finegrained', name: 'GitHub Fine-grained PAT', type: 'API Key', pattern: /github_pat_[A-Za-z0-9_]{60,}/g, risk: 'CRITICAL' },
         { id: 'stripe_sk',   name: 'Stripe Secret Key',  type: 'API Key', pattern: /sk_live_[A-Za-z0-9]{24,}/g, risk: 'CRITICAL' },
         { id: 'stripe_sk_test', name: 'Stripe Test Key', type: 'API Key', pattern: /sk_test_[A-Za-z0-9]{24,}/g, risk: 'HIGH' },
         { id: 'stripe_rk',   name: 'Stripe Restricted',  type: 'API Key', pattern: /rk_(?:live|test)_[A-Za-z0-9]{24,}/g, risk: 'HIGH' },
@@ -65,6 +66,9 @@
         { id: 'slack_tok',   name: 'Slack Token',        type: 'API Key', pattern: /xox[baprs]-[A-Za-z0-9-]{10,}/g, risk: 'HIGH' },
         { id: 'sendgrid',    name: 'SendGrid Key',       type: 'API Key', pattern: /SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}/g, risk: 'HIGH' },
         { id: 'npm',         name: 'NPM Token',          type: 'API Key', pattern: /npm_[A-Za-z0-9]{36}/g, risk: 'HIGH' },
+        { id: 'huggingface', name: 'HuggingFace Token',  type: 'API Key', pattern: /hf_[A-Za-z0-9]{34,}/g, risk: 'HIGH' },
+        { id: 'gitlab',      name: 'GitLab Token',       type: 'API Key', pattern: /glpat-[A-Za-z0-9_-]{20,}/g, risk: 'HIGH' },
+        { id: 'slack_webhook', name: 'Slack Webhook',    type: 'API Key', pattern: /https:\/\/hooks\.slack\.com\/services\/T[A-Z0-9]+\/B[A-Z0-9]+\/[A-Za-z0-9]+/g, risk: 'HIGH' },
 
         // ── JWTs ───────────────────────────────────────────────────────
         { id: 'jwt',         name: 'JWT Token',          type: 'JWT',     pattern: /eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, risk: 'HIGH' },
@@ -73,7 +77,10 @@
         { id: 'pem_priv',    name: 'Private Key (PEM)',  type: 'Private Key', pattern: /-----BEGIN\s+(?:RSA\s+|EC\s+|DSA\s+|OPENSSH\s+|PGP\s+)?PRIVATE\s+KEY(?:\s+BLOCK)?-----/g, risk: 'CRITICAL' },
 
         // ── credentials embedded in URLs ───────────────────────────────
-        { id: 'url_creds',   name: 'Credentials in URL', type: 'Credentials', pattern: /[a-z][a-z0-9+\-.]*:\/\/[^\s/:@]+:[^\s/:@]+@[^\s]+/gi, risk: 'HIGH' },
+        { id: 'url_creds',   name: 'Credentials in URL', type: 'Credentials', pattern: /[a-z][a-z0-9+\-.]{0,30}:\/\/[^\s/:@]+:[^\s/:@]+@[^\s]+/gi, risk: 'CRITICAL' },
+        { id: 'bearer',      name: 'Bearer Token',       type: 'Credentials', pattern: /Bearer\s+[A-Za-z0-9_\-.]{20,}/g, risk: 'HIGH',
+          validate: (v) => { const t = v.replace(/^Bearer\s+/i, '').toLowerCase(); return !['example', 'test', 'sample', 'your', 'token', 'insert', 'placeholder', 'change', 'replace'].some((s) => t.includes(s)); } },
+        { id: 'basic_auth',  name: 'Basic Auth Header',  type: 'Credentials', pattern: /Basic\s+[A-Za-z0-9+/=]{16,}/g, risk: 'HIGH' },
 
         // ── PII ────────────────────────────────────────────────────────
         { id: 'email',       name: 'Email Address',      type: 'PII', pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,7}\b/g, risk: 'LOW' },
@@ -247,9 +254,10 @@
     // QUICK CHECK + FULL DETECTION
     // ====================================================================
     const QUICK_CHECK = [
-        /sk-/, /AKIA/, /ghp_/, /gho_/, /ghu_/, /ghs_/, /xox[baprs]-/,
+        /sk-/, /AKIA/, /ghp_/, /gho_/, /ghu_/, /ghs_/, /github_pat_/, /xox[baprs]-/,
         /-----BEGIN/, /eyJ[A-Za-z0-9]/, /AC[a-f0-9]{20}/, /SK[a-f0-9]{20}/,
-        /AIza/, /SG\./, /\d{3}-\d{2}-\d{4}/, /:\/\/[^\s/:@]+:[^\s/:@]+@/
+        /AIza/, /SG\./, /hf_[A-Za-z0-9]{20}/, /glpat-/, /hooks\.slack\.com/,
+        /\d{3}-\d{2}-\d{4}/, /:\/\/[^\s/:@]+:[^\s/:@]+@/
     ];
 
     function quickCheck(text) {
@@ -324,6 +332,14 @@
         // of an email reveal the user. Entropy hits are random secrets
         // with no public marker — first 4 chars are recoverable entropy.
         ssn:                    0,
+        // main.js's live card pattern ids are cc_* — the credit_card_* keys below
+        // come from the detection module and never matched a live finding, so cards
+        // were falling through to the default prefix length (4) and exposing the
+        // issuer IIN (first 4 digits) in the stored preview. Map the real ids to 0.
+        cc_visa:                0,
+        cc_mc:                  0,
+        cc_amex:                0,
+        cc_discover:            0,
         credit_card_visa:       0,
         credit_card_mastercard: 0,
         credit_card_amex:       0,
@@ -446,10 +462,13 @@
             while ((m = re.exec(scanText)) !== null) {
                 const value = m[0];
                 if (pat.validate && !pat.validate(value)) continue;
-                // Skip matches shorter than the minimum-token bar or that
-                // look like CSS/hex noise. Vendor patterns already have
-                // length floors above 16, but the whitelist is cheap.
-                if (isWhitelistedToken(value)) continue;
+                // NOTE: do NOT run isWhitelistedToken() here. Vendor patterns are
+                // specific (fixed prefixes) and many are validated (Luhn cards, SSN
+                // range check). The generic noise filter's length<16 and "mostly hex"
+                // rules were silently dropping real CRITICAL matches: SSNs (11 chars),
+                // Amex (15), 13-digit Visa, and all-hex vendor IDs like Twilio SID
+                // (AC + 32 hex). The whitelist is applied only to the entropy layer
+                // below, where generic tokens actually need it.
                 if (spansOverlap(m.index, m.index + value.length)) continue;
                 seenSpans.push([m.index, m.index + value.length]);
                 regexSpans.push([m.index, m.index + value.length]);
@@ -496,7 +515,7 @@
         let topType = null;
         if (findings.length > 0) {
             const ordered = [...findings].sort((a, b) => (RISK_RANK[b.risk] || 0) - (RISK_RANK[a.risk] || 0));
-            topType = ordered[0].type;
+            topType = ordered[0].name;
         }
 
         return { findings, topType };
@@ -695,7 +714,7 @@
         // Recompute topType after the minimal-mode filter.
         if (findings.length > 0) {
             const ordered = [...findings].sort((a, b) => (RISK_RANK[b.risk] || 0) - (RISK_RANK[a.risk] || 0));
-            topType = ordered[0].type;
+            topType = ordered[0].name;
         }
 
         const highestRisk = highestRiskOf(findings) || 'LOW';
@@ -777,7 +796,7 @@
             if (findings.length === 0) return;
             if (findings.length > 0) {
                 const ordered = [...findings].sort((a, b) => (RISK_RANK[b.risk] || 0) - (RISK_RANK[a.risk] || 0));
-                topType = ordered[0].type;
+                topType = ordered[0].name;
             }
 
             const highestRisk = highestRiskOf(findings) || 'LOW';
@@ -893,7 +912,7 @@
         banner.className = 'vb-banner' + (incident.blocked ? ' vb-banner--blocked' : ' vb-banner--warn');
         banner.setAttribute('role', 'alert');
 
-        const findingNames = [...new Set(incident.findings.map((f) => f.type))];
+        const findingNames = [...new Set(incident.findings.map((f) => f.name))];
         const verb = incident.blocked ? 'blocked' : 'detected';
         const headline = `VaultBix ${verb} a potential ${incident.topType || 'data'} leak to ${incident.destination}`;
         const sub = `${incident.findings.length} item${incident.findings.length === 1 ? '' : 's'} detected — ${findingNames.join(', ')}`;

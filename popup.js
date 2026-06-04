@@ -293,31 +293,12 @@
             chrome.tabs.create({ url: 'https://vaultbix.com/dashboard' });
         });
 
-        // Connect button — opens connect flow or shows token prompt
-        $('vbConnectBtn').addEventListener('click', async () => {
-            if (state.enterprise.connected) {
-                // Already connected — open dashboard
-                chrome.tabs.create({ url: 'https://vaultbix.com/dashboard' });
-                return;
-            }
-            // Prompt for connect token
-            const token = prompt('Paste your VaultBix connection token from the dashboard:');
-            if (!token || !token.trim()) return;
-            const apiBase = prompt('Dashboard URL (press OK for default):', 'http://localhost:3000') || 'http://localhost:3000';
-            toast('Connecting...', 'saved');
-            const resp = await send({
-                action: 'enterprise_connect',
-                connectToken: token.trim(),
-                apiBaseUrl: apiBase.replace(/\/+$/, '')
-            });
-            if (resp?.success) {
-                state.enterprise.connected = true;
-                state.enterprise.orgName = resp.orgName || 'Connected';
-                renderEnterprise();
-                toast('Connected to ' + (resp.orgName || 'organization'), 'saved');
-            } else {
-                toast(resp?.error || 'Connection failed', 'blocked');
-            }
+        // Connect button — enterprise org connect is not shipping in this build
+        // (the button is hidden above). Keep a harmless click handler so the
+        // element reference stays valid; the previous flow used prompt() and a
+        // localhost:3000 default, which should never ship in a production bundle.
+        $('vbConnectBtn').addEventListener('click', () => {
+            chrome.tabs.create({ url: 'https://vaultbix.com/dashboard' });
         });
 
         // Live updates pushed from background when a new incident arrives

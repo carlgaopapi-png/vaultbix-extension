@@ -75,8 +75,12 @@ export const REGEX_PATTERNS = [
         risk: 'CRITICAL',
         category: 'API_KEY',
         validate: (match, fullText) => {
-            const ctx = fullText.toLowerCase();
-            return ctx.includes('aws') || ctx.includes('secret') || ctx.includes('access_key');
+            const idx = fullText.indexOf(match);
+            if (idx === -1) return false;
+            const start = Math.max(0, idx - 100);
+            const end = Math.min(fullText.length, idx + match.length + 100);
+            const ctx = fullText.slice(start, end).toLowerCase();
+            return ctx.includes('aws_secret_access_key') || ctx.includes('aws_secret');
         }
     },
     {
@@ -243,7 +247,18 @@ export const REGEX_PATTERNS = [
         pattern: /(?:password|passwd|pwd|secret|token|api[_-]?key|apikey|auth[_-]?token)\s*[:=]\s*['"`]?[^\s'"`,\n]{8,}/i,
         risk: 'HIGH',
         category: 'CREDENTIAL',
-        validate: (match) => !match.includes('example') && !match.includes('xxx') && !match.includes('placeholder')
+        validate: (match) => {
+            const lower = match.toLowerCase();
+            const blocklist = ['example', 'xxx', 'placeholder', 'your_', 'enter', 'insert', 'add_', 'change', 'replace', 'here', 'value', '<', '>', '****', '...'];
+            if (blocklist.some(b => lower.includes(b))) return false;
+            const valMatch = match.match(/[:=]\s*['"`]?(.*)/i);
+            if (valMatch) {
+                const val = valMatch[1].replace(/['"`]$/, '').toLowerCase();
+                const placeholders = ['password', 'changeme', 'undefined', 'null', 'none', 'empty', 'default', 'todo', 'fixme', 'update', 'required', 'needed', 'missing', 'blank', 'nothing', 'sample', 'dummy', 'fake', 'test', 'testing'];
+                if (placeholders.includes(val)) return false;
+            }
+            return true;
+        }
     },
     {
         id: 'basic_auth',
@@ -257,7 +272,12 @@ export const REGEX_PATTERNS = [
         name: 'Bearer Token',
         pattern: /Bearer\s+[A-Za-z0-9_-]{20,}/,
         risk: 'HIGH',
-        category: 'CREDENTIAL'
+        category: 'CREDENTIAL',
+        validate: (match) => {
+            const token = match.replace(/^Bearer\s+/i, '').toLowerCase();
+            const skipList = ['example', 'test', 'sample', 'your', 'token', 'insert', 'placeholder', 'change', 'replace'];
+            return !skipList.some(s => token.includes(s));
+        }
     },
     {
         id: 'jwt',
@@ -330,33 +350,38 @@ export const REGEX_PATTERNS = [
         validate: (match) => luhnCheck(match)
     },
     {
-        id: 'email',
-        name: 'Email Address',
-        pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,7}\b/,
-        risk: 'LOW',
-        category: 'PII'
-    },
-    {
         id: 'phone_us',
         name: 'Phone Number (US)',
         pattern: /\b(?:\+1[-.\s]?)?\(?[2-9]\d{2}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/,
         risk: 'MEDIUM',
-        category: 'PII'
+        category: 'PII',
+        validate: (match, fullText) => {
+            const idx = fullText.indexOf(match);
+            if (idx === -1) return false;
+            if (idx > 0 && /\d/.test(fullText[idx - 1])) return false;
+            const afterIdx = idx + match.length;
+            if (afterIdx < fullText.length && /\d/.test(fullText[afterIdx])) return false;
+            const start = Math.max(0, idx - 150);
+            const end = Math.min(fullText.length, afterIdx + 150);
+            const ctx = fullText.slice(start, end).toLowerCase();
+            return /\b(?:phone\s*(?:number|#|:)|tel[:\s]|mobile[:\s]|cell[:\s]|fax[:\s]|contact\s*(?:number|#|:)|sms[:\s])\b/.test(ctx);
+        }
     },
     {
         id: 'phone_intl',
         name: 'Phone Number (International)',
         pattern: /\b\+[1-9]\d{6,14}\b/,
         risk: 'MEDIUM',
-        category: 'PII'
+        category: 'PII',
+        validate: (match, fullText) => {
+            const idx = fullText.indexOf(match);
+            if (idx === -1) return false;
+            const start = Math.max(0, idx - 150);
+            const end = Math.min(fullText.length, idx + match.length + 150);
+            const ctx = fullText.slice(start, end).toLowerCase();
+            return /\b(?:phone\s*(?:number|#|:)|tel[:\s]|mobile[:\s]|cell[:\s]|fax[:\s]|contact\s*(?:number|#|:)|sms[:\s])\b/.test(ctx);
+        }
     },
-    {
-        id: 'ip_address',
-        name: 'IP Address',
-        pattern: /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/,
-        risk: 'LOW',
-        category: 'PII'
-    }
 ];
 
 // ── contextual patterns (require nearby keywords) ──────────────────────────
@@ -409,7 +434,7 @@ export const RISK_LEVELS = {
 
 export const QUICK_CHECK_PATTERNS = [
     /sk-/i, /AKIA/, /ghp_/, /gho_/, /ghs_/, /xox[baprs]-/,
-    /-----BEGIN/, /password/i, /secret/i, /api[_-]?key/i,
+    /-----BEGIN/, /password\s*[:=]\s*['"`]?[^\s]{8,}/i, /secret\s*[:=]\s*['"`]?[^\s]{8,}/i, /aws_secret/i, /api[_-]?key/i,
     /\d{3}-\d{2}-\d{4}/, /4\d{15}/, /5[1-5]\d{14}/,
     /Bearer\s/, /eyJ[A-Za-z0-9]/, /mongodb:\/\//, /postgres:\/\//
 ];

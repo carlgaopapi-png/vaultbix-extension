@@ -134,18 +134,14 @@ function runContextualPatterns(text, findings) {
 
 // ── Layer 2: ML NER ────────────────────────────────────────────────────────
 
-const NER_CATEGORY_MAP = {
-    'PER':  { category: 'PERSON_NAME',   risk: 'HIGH',   name: 'Person Name' },
-    'ORG':  { category: 'ORGANIZATION',  risk: 'MEDIUM', name: 'Organization Name' },
-    'LOC':  { category: 'LOCATION',      risk: 'LOW',    name: 'Location' },
-    'MISC': { category: 'MISC_ENTITY',   risk: 'LOW',    name: 'Miscellaneous Entity' }
-};
+const NER_CATEGORY_MAP = {};
 
 async function runMLDetection(text, findings) {
     try {
         const entities = await detectEntitiesML(text);
         for (const entity of entities) {
-            const mapped = NER_CATEGORY_MAP[entity.entity] || { category: 'UNKNOWN', risk: 'LOW', name: entity.entity };
+            const mapped = NER_CATEGORY_MAP[entity.entity];
+            if (!mapped) continue;
             findings.push({
                 source: 'ml',
                 type: mapped.category,
@@ -213,11 +209,6 @@ function redactValue(value, pattern) {
 
     if (id === 'ssn') {
         return `[SSN ending ${value.slice(-4)}]`;
-    }
-
-    if (id === 'email') {
-        const atIndex = value.indexOf('@');
-        if (atIndex > 0) return `${value[0]}***@${value.slice(atIndex + 1)}`;
     }
 
     return `${value.slice(0, 4)}[REDACTED]${value.slice(-4)}`;
